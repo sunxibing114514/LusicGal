@@ -18,6 +18,10 @@ fi
 ABI="${ANDROID_ABI:-arm64-v8a}"
 BUILD="$ROOT/build/engines/onscripter-$ABI"
 echo "== OnscripterYuri → $ABI（toolchain: $NDK）=="
+# 上游依赖（SDL2/bz2/lua 等）由其自带脚本拉取到 extlib（尽力而为，失败不阻断）。
+if [ -f "$SRC/script/_fetch.sh" ]; then
+  bash "$SRC/script/_fetch.sh" || echo "（上游 _fetch.sh 失败，继续用现有依赖配置）"
+fi
 cmake -S "$SRC" -B "$BUILD" \
   -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" \
   -DANDROID_ABI="$ABI" \

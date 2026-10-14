@@ -8,7 +8,9 @@ import UIKit
 /// - PlatformView  `lusicgal-engine-view`
 ///
 /// 核心探测用 dlsym 检查静态链接符号 `lg_<engine>_engine_create`（engine_abi.h）。
-public class LusicgalEnginesPlugin: NSObject, FlutterPlugin {
+/// 注：FlutterStreamHandler 的可选协议方法必须在类型声明处实现
+/// （extension 中的 @objc 可选方法运行期不可见）。
+public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     /// RTLD_DEFAULT：dlsym 在全局符号表检索。
     private static let rtldDefault: UnsafeMutableRawPointer? =
@@ -75,6 +77,14 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin {
         ])
     }
 
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) {
+        eventSink = events
+    }
+
+    public func onCancel(withArguments arguments: Any?) {
+        eventSink = nil
+    }
+
     private func probe(_ engineId: String) -> [String: Any?] {
         let symbol = "lg_\(engineId)_engine_create"
         if dlsym(LusicgalEnginesPlugin.rtldDefault, symbol) != nil {
@@ -83,16 +93,6 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin {
         }
         return ["engineId": engineId, "available": false, "version": nil,
                 "message": "核心未打包：静态符号 \(symbol) 未链接（构建见 docs/BUILD.md 与 .github/workflows/engines.yml）"]
-    }
-}
-
-extension LusicgalEnginesPlugin: FlutterStreamHandler {
-    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) {
-        eventSink = events
-    }
-
-    public func onCancel(withArguments arguments: Any?) {
-        eventSink = nil
     }
 }
 

@@ -62,14 +62,14 @@ class SaveManager {
         if (entity is! File) continue;
         final rel = p.relative(entity.path, from: dir.path);
         final bytes = await entity.readAsBytes();
-        archive.add(ArchiveFile(
+        archive.addFile(ArchiveFile(
           'saves/$rel',
           bytes.length,
           bytes,
         ));
       }
     }
-    final encoded = ZipEncoder().encode(archive);
+    final encoded = ZipEncoder().encode(archive) ?? <int>[];
     await exportDir.create(recursive: true);
     final slug = _sanitize(title);
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '').substring(0, 15);

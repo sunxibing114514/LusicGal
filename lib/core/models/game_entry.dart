@@ -32,7 +32,7 @@ class GameEntry {
   /// 文件丢失（用户手动删除了目录）。
   bool pathMissing;
 
-  Map<String, Object> toJson() => {
+  Map<String, Object?> toJson() => {
         'id': id,
         'title': title,
         'engine': engine.id,
@@ -110,7 +110,7 @@ class DetectResult {
   /// 证据分阈值：低于此值视为不可信。
   bool get confident => score >= 6;
 
-  Map<String, Object> toReportJson() => {
+  Map<String, Object?> toReportJson() => {
         'engine': engine.id,
         'engineDetail': engineDetail,
         'score': score,

@@ -39,7 +39,8 @@ class EngineHost {
         options: options,
       );
 
-  Stream<EngineEvent> get events => _engines.events();
+  Stream<EngineEvent> events({String? gameId}) =>
+      _engines.events(gameId: gameId);
 
   Future<void> pause() => _engines.sendCommand('pause');
 

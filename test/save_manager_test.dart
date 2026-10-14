@@ -57,10 +57,10 @@ void main() {
 
   test('zip-slip 防护：拒绝路径穿越条目', () async {
     final evil = Archive()
-      ..add(ArchiveFile('../evil.txt', 5, [1, 2, 3, 4, 5]))
-      ..add(ArchiveFile('/abs/path.txt', 5, [1, 2, 3, 4, 5]))
-      ..add(ArchiveFile('ok.txt', 2, [65, 66]));
-    final bytes = ZipEncoder().encode(evil);
+      ..addFile(ArchiveFile('../evil.txt', 5, [1, 2, 3, 4, 5]))
+      ..addFile(ArchiveFile('/abs/path.txt', 5, [1, 2, 3, 4, 5]))
+      ..addFile(ArchiveFile('ok.txt', 2, [65, 66]));
+    final bytes = ZipEncoder().encode(evil) ?? <int>[];
 
     final count = await manager.importZip('g3', 'onscripter', bytes);
     expect(count, 1, reason: '仅接受合法条目');

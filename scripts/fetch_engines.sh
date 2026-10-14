@@ -28,7 +28,7 @@ PINNED=(
   "siglus-rs|xmoezzz/siglus_rs|5f358ef1360b0439e92aed2b749e8f25d8721954"
   "sena-rs|xmoezzz/sena-rs|f99db788421f2b724f1c57bc0a7c00debbd3624a"
   "xsystem35-sdl2|kichikuou/xsystem35-sdl2|741a96e40733ba2b51eac3f9b57022b7c5015073"
-  "aether|AetherKiri/AetherKiri|a7453781f4a753a8d933e49aaa3c2960f1a823e7"
+  "aether|AetherKiri/Aether|a7453781f4a753a8d933e49aaa3c2960f1a823e7"
   "yukihub|xm486/YukiHub|35d12c0bb3d693646a3296bfe805561439b9f47c"
 )
 
@@ -63,7 +63,7 @@ if [ "$VERIFY" -eq 1 ]; then
   for entry in "${PINNED[@]}"; do
     IFS='|' read -r name repo sha <<< "$entry"
     matches "$name" || continue
-    code="$(curl -s -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
+    code="$(curl -sL -o /dev/null -w '%{http_code}' "${AUTH[@]}" \
       "https://api.github.com/repos/$repo/commits/$sha")"
     if [ "$code" = "200" ]; then
       echo "OK   $name @ ${sha:0:12}"

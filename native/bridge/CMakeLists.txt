@@ -6,6 +6,6 @@ project(lusicgal_bridge C)
 add_library(lusicgal_bridge STATIC
   jni/lusicgal_jni.c
   host/lusicgal_options.c
-  stubs/lusicgal_stubs.c
+  ../stubs/lusicgal_stubs.c
 )
 target_include_directories(lusicgal_bridge PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)

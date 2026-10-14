@@ -23,7 +23,7 @@
 | 14 | xmoezzz/siglus_rs | Rust | MPL-2.0 | ✅ 多平台 | KEY 系核心 + **engine-detect 规则** |
 | 15 | xmoezzz/sena-rs | Rust | MPL-2.0 | ✅ iOS arm64 / Android arm64-v8a | SoftPAL 核心 |
 | 16 | kichikuou/xsystem35-sdl2 | C | GPL-2.0 | ✅ 完整 Android Gradle 工程 | System 3.x 核心 |
-| 17 | AetherKiri/AetherKiri（Artemis 参考） | C++/GDScript | GPL-3.0 | ✅ iOS/Android CI | 多运行时 ABI + AetherMinori |
+| 17 | AetherKiri/Aether（原 AetherKiri，Artemis 参考） | C++/GDScript | GPL-3.0 | ✅ iOS/Android CI | 多运行时 ABI + AetherMinori |
 | 18 | xm486/YukiHub（同类参考） | Java | GPL-3.0 | ✅ Android 原生 | 管理端交互 + rfvp-build 补丁集 |
 
 Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
