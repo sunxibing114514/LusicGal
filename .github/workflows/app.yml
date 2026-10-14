@@ -1,0 +1,85 @@
+name: app
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  analyze-test:
+    name: analyze + test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - name: pub get
+        run: flutter pub get
+      - name: analyze
+        run: flutter analyze
+      - name: test
+        run: flutter test
+
+  build-android:
+    name: android apk (release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      # 平台壳由 CI 确定性重建（docs/ARCHITECTURE.md §6）：
+      # 自定义原生代码全部在 plugins/ 与 native/，不受 flutter create 影响。
+      - name: regenerate android shell
+        run: flutter create --platforms=android --org com.lusicgal --project-name lusicgal .
+      - name: restore committed files touched by create
+        run: git checkout -- pubspec.yaml analysis_options.yaml .gitignore || true
+      - name: patch platform shell
+        run: python3 scripts/patch_platform.py
+      - name: pub get
+        run: flutter pub get
+      - name: build apk
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lusicgal-android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+
+  build-ios:
+    name: ios (debug, no codesign)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - name: regenerate ios shell
+        run: flutter create --platforms=ios --org com.lusicgal --project-name lusicgal .
+      - name: restore committed files touched by create
+        run: git checkout -- pubspec.yaml analysis_options.yaml .gitignore || true
+      - name: patch platform shell
+        run: python3 scripts/patch_platform.py
+      - name: pub get
+        run: flutter pub get
+      - name: build ios (no codesign)
+        run: flutter build ios --debug --no-codesign

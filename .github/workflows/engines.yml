@@ -1,0 +1,96 @@
+name: engines
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  c-abi-host:
+    name: C ABI selftest (host gcc) — 必须绿
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S native/selftest -B build-selftest
+      - name: build
+        run: cmake --build build-selftest
+      - name: run selftest
+        run: ./build-selftest/lusicgal_selftest
+
+  jni-bridge-android:
+    name: JNI bridge ×NDK arm64-v8a — 必须绿
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: locate NDK
+        run: |
+          NDK="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            echo "未找到 NDK"; exit 1
+          fi
+          echo "NDK_HOME=$NDK" >> "$GITHUB_ENV"
+          echo "使用 NDK: $NDK"
+      - name: configure + build bridge (static lib)
+        run: |
+          cmake -S native/bridge -B build-bridge \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-bridge
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lusicgal-bridge-arm64
+          path: build-bridge/liblusicgal_bridge.a
+          if-no-files-found: error
+
+  rust-cbridge:
+    name: Rust FFI gate (cargo check) — 必须绿
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: cargo check
+        run: cargo check --manifest-path native/rust/cbridge/Cargo.toml
+      - name: cargo test
+        run: cargo test --manifest-path native/rust/cbridge/Cargo.toml
+
+  fetch-upstreams:
+    name: 18 个上游 pin 校验 — 必须绿
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: verify pins via GitHub API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch_engines.sh --verify
+
+  onscripter-android:
+    name: 实验：OnscripterYuri ×NDK（非阻塞）
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: fetch upstream
+        run: bash scripts/fetch_engines.sh onscripter-yuri
+      - name: cross compile
+        run: bash native/engines/onscripter/build_android.sh
+
+  sena-android:
+    name: 实验：sena-rs ×Android target（非阻塞）
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: fetch upstream
+        run: bash scripts/fetch_engines.sh sena-rs
+      - name: cargo check (aarch64-linux-android)
+        run: bash native/engines/sena/build_android.sh

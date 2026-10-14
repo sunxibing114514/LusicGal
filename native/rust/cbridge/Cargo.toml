@@ -1,0 +1,15 @@
+[package]
+name = "lusicgal-cbridge"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0"
+description = "LusicGal Rust FFI 门面：rfvp / siglus_rs / sena-rs 以 staticlib 接入统一 engine ABI"
+publish = false
+
+[lib]
+name = "lusicgal_cbridge"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# 无外部依赖：保证 `cargo check` 离线可绿（engines.yml: rust-cbridge）。
+# 真实核心（rfvp/siglus/sena）接入时以 path/git 依赖引入 third_party/upstream。
+[dependencies]

@@ -1,0 +1,20 @@
+name: lusicgal_engines
+description: LusicGal engine host bridge (MethodChannel / EventChannel / PlatformView + native core probing).
+version: 0.1.0
+publish_to: "none"
+
+environment:
+  sdk: ^3.5.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.lusicgal.engines
+        pluginClass: LusicgalEnginesPlugin
+      ios:
+        pluginClass: LusicgalEnginesPlugin

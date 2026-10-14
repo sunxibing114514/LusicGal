@@ -1,0 +1,28 @@
+# Flutter/Dart
+.dart_tool/
+.packages
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+*.iml
+.idea/
+.vscode/
+*.log
+
+# 平台壳（android/ios）不提交：CI 用 `flutter create` 确定性重建，见 docs/BUILD.md
+/android/
+/ios/
+/macos/
+/linux/
+/windows/
+/web/
+.metadata
+
+# 上游引擎源码（由 scripts/fetch_engines.sh 按 pin 拉取，不入库）
+/third_party/
+
+# OS
+.DS_Store
+Thumbs.db
