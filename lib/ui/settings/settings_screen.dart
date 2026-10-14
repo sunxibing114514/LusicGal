@@ -16,7 +16,7 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          _Section(title: '外观'),
+          const _Section(title: '外观'),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -51,7 +51,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          _Section(title: '渲染'),
+          const _Section(title: '渲染'),
           Card(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -85,7 +85,7 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
           ),
-          _Section(title: '音量'),
+          const _Section(title: '音量'),
           for (final channel in SettingsController.volumeChannels)
             Card(
               child: Padding(
@@ -115,7 +115,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          _Section(title: '按键映射'),
+          const _Section(title: '按键映射'),
           for (final action in SettingsController.keyActions)
             Card(
               child: ListTile(
@@ -149,7 +149,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          _Section(title: '关于'),
+          const _Section(title: '关于'),
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),

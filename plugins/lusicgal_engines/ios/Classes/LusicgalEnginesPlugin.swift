@@ -77,12 +77,14 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         ])
     }
 
-    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) {
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
         eventSink = events
+        return nil
     }
 
-    public func onCancel(withArguments arguments: Any?) {
+    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
         eventSink = nil
+        return nil
     }
 
     private func probe(_ engineId: String) -> [String: Any?] {

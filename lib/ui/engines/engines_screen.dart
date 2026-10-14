@@ -33,7 +33,6 @@ class _EnginesScreenState extends State<EnginesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(
         title: const Text('引擎'),

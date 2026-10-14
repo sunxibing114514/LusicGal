@@ -45,7 +45,7 @@ class EngineDetector {
   DetectResult detect(String rootPath) {
     final root = Directory(rootPath);
     if (!root.existsSync()) {
-      return DetectResult(engine: EngineId.unknown, evidence: const []);
+      return const DetectResult(engine: EngineId.unknown, evidence: []);
     }
 
     final ctx = _ScanContext();

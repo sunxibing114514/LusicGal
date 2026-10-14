@@ -47,9 +47,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 
   Future<void> _launch() async {
+    final settings = context.read<SettingsController>();
     final saveDir = _saves.saveDirFor(widget.game.id, widget.game.engine.id);
     await saveDir.create(recursive: true);
-    final settings = context.read<SettingsController>();
     final result = await _host.launchGame(
       game: widget.game,
       savePath: saveDir.path,
