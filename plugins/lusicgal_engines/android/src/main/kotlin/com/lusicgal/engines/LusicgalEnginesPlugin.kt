@@ -289,8 +289,25 @@ object EngineHost {
         } catch (e: UnsatisfiedLinkError) {
             false
         }
+        if (ok) bootstrapSdl(engineId)
         coreLoaded[engineId] = ok
         return ok
+    }
+
+    /**
+     * SDL 系核心（onscripter/xsystem35）装载后调用 SDL 的音频 JNI 初始化：
+     * JNI_OnLoad 只完成 RegisterNatives（绑定 nativeSetupJNI），回调方法表
+     * （audioOpen/audioWrite*…）由该调用在 C 侧缓存（SDL_android.c:659）。
+     * 不调用 = 音频静默失败（v1 现象）。核心库不含 SDL 时静默跳过。
+     */
+    private fun bootstrapSdl(engineId: String) {
+        if (engineId != "onscripter" && engineId != "xsystem35") return
+        org.libsdl.app.SDLActivity.appContext = context?.applicationContext
+        try {
+            org.libsdl.app.SDLAudioManager.nativeSetupJNI()
+        } catch (e: Throwable) {
+            android.util.Log.w("LusicgalEngines", "SDL audio JNI bootstrap 失败（${engineId}）：$e")
+        }
     }
 
     fun probeAll(): List<Map<String, Any?>> = engineIds.map { probe(it) }

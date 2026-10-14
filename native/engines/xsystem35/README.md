@@ -16,7 +16,8 @@
    `-gamedir <game_dir> -savedir <save_dir> -noimagecursor`
    （`-gamedir` 在 `__ANDROID__` 下 = chdir 游戏根，`*.ald` 从此扫描）。
 3. 输入 JSON → `SDL_PushEvent`（视口 640×480 归一化换算）；stop → `SDL_QUIT`。
-   SDL Java 侧生命周期同 ONScripter（`SdlCompat.kt` 最小胶水）。
+   SDL Java 侧生命周期与实时音频同 ONScripter（`SdlCompat.kt`：
+   SDLAudioManager 完整移植，装载核心后 `nativeSetupJNI()` 引导）。
 4. `playlist.txt` 虚拟 CD 与字体参数经 options_json 透传（后续）。
 
 构建：`bash native/engines/xsystem35/build_android.sh`（需 ANDROID_NDK_HOME）。
