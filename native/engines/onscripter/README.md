@@ -10,15 +10,29 @@
 - **onscripter-ru**：iOS Xcode 工程参数 + BSD 许可文件（可作 iOS 胶水）。
 - **yeatse/ONScripter-iOS**：SDL2 iOS 交叉编译参数（`build_libraries.sh` + `SDL2-patch.diff`）。
 
-## Android（实验脚本）
+## Android（v2 实装：`adapter/lg_onscripter.cpp`）
 
 ```bash
-bash scripts/fetch_engines.sh
-bash native/engines/onscripter/build_android.sh   # 需要 ANDROID_NDK_HOME，vcpkg 依赖自动解析
+bash scripts/fetch_engines.sh onscripter-yuri
+bash native/engines/onscripter/build_android.sh   # 需要 ANDROID_NDK_HOME
 ```
 
-产物并入 `liblusicgal_onscripter.so`（engine_abi.h 包装 SDL 主循环 →
-`lg_onscripter_engine_set_surface(ANativeWindow*)`）。
+链路（build_android.sh 自动执行）：
+1. 上游 `script/_fetch.sh` 拉取 SDL 栈（`thirdparty/port/SDL2-2.26.3` 等）。
+2. `scripts/patch_sdl_android.sh`：给 `SDL_android.c` 的
+   `Android_JNI_GetNativeWindow()` 加宿主窗口覆盖
+   （`LG_SDL_Window_Override()` —— SDL2 Android **没有** `SDL_CreateWindowFrom`，
+   这是无 SDLActivity 嵌入的取窗路径）。
+3. 适配器 CMake 镜像上游 `src/onsyuri_android/app/cpp/CMakeLists.txt` 依赖编排
+   → `add_subdirectory(仓库根)` 得 `libonsyuri.so`，再链出
+   `liblusicgal_onscripter.so`。
+
+运行期：`lg_onscripter_engine_start` 在私有线程调上游 `main(argc, argv)`：
+`-r <game_dir> --save-dir <save_dir> --width/--height <options>`；
+输入 JSON → `SDL_PushEvent`（触摸→鼠标合成，键名→SDL keycode）；
+stop → `SDL_QUIT`。SDL 的 Java 侧生命周期由插件内
+`org.libsdl.app.SDLActivity/SDLAudioManager` 最小胶水承接
+（`SdlCompat.kt`；v1 音频初始化即失败 → 静音运行，见 ENGINE_NOTES）。
 
 ## iOS
 

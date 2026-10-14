@@ -1,0 +1,17 @@
+[package]
+name = "lusicgal_rfvp_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "LusicGal Rfvp(FVP) 核心：rfvp crate 的 lg_rfvp_engine_* 壳。"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+lg_common = { path = "../../lg_common" }
+serde_json = "1"
+
+# 上游核心（scripts/fetch_engines.sh rfvp 拉取到 third_party/upstream）。
+[dependencies.rfvp]
+path = "../../../../third_party/upstream/rfvp/crates/rfvp"

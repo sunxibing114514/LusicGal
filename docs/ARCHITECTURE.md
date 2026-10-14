@@ -48,20 +48,22 @@
 
 ## 3. 桥（plugins/lusicgal_engines）
 
-- **probe**：Android `System.loadLibrary("lusicgal_<id>")` try/catch → 可用性；iOS `dlsym(RTLD_DEFAULT, "lg_<id>_engine_create")` → 可用性。探测失败的引擎在"引擎"页显示为"核心未打包"并附构建指引，而非崩溃。
-- **launch**：`{engineId, gameId, gamePath, savePath, options{...}}` → 核心缺失时同步失败 + 事件 `core_missing`。
-- **事件流**：`EventChannel` 推送 `log/state/exit/core_missing` JSON 事件。
-- **PlatformView**：creationParams `{engineId, gameId}`；v1 渲染原生占位面（与未来引擎 surface 同一注册点，Android `View`/iOS `UIView`）。
+- **probe（v2 dlsym 模型）**：Android 先 `System.loadLibrary("lusicgal_<id>")`（try/catch）再经桥 `CoreNative.probeCore`（`dlsym(RTLD_DEFAULT, "lg_<id>_abi_version")`）；iOS `lg_ios_probe`（同 dlsym，静态符号）。探测失败的引擎在"引擎"页显示为"核心未打包"并附构建指引，而非崩溃。
+- **launch**：`{engineId, gameId, gamePath, savePath, options{...}}` → 桥先注入 JVM/Context（`lg_<id>_set_android_context`，可选符号）→ `engine_create` + `engine_start(emit_event)`；核心缺失同步失败 + 事件 `core_missing`。renpy 例外：Route B 外板壳 Activity（`RenpyLauncher`）。
+- **输入（v2）**：`EngineSurfaceView` 触摸 → `CoreNative.pushInput`（归一化坐标 JSON）→ `lg_<id>_engine_push_input`；键/文本经 method channel `pushInput`。核心无 push_input 符号时桥自动包装为 `{"command":"input","event":…}`。
+- **事件流**：核心线程 → C `emit_event` → JNI `AttachCurrentThread` → 主 Handler → `EventChannel` 推送 `log/state/exit/core_missing`（+ art3m1s 的 `artemis_log/artemis_media/artemis_ui`）。
+- **PlatformView**：creationParams `{engineId, gameId}`；Android `EngineSurfaceView`（SurfaceView → `attachSurface`+`surfaceSize`），iOS v1 占位面（真实 Metal/CAMetalLayer 接线见 ROADMAP）。
 
-## 4. C ABI（native/include/lusicgal/engine_abi.h）
+## 4. C ABI（native/include/lusicgal/engine_abi.h，v2 = 0x00020000）
 
 设计借鉴 AetherKiri `abi/include/engine_api.h`（其源头是 krkr2）：
 - `struct_size` 首字段版本化 + `reserved[]` 尾部保留（ABI 可演化）
 - `lg_engine_t` 不透明句柄；`lg_result_t` 错误码（OK/ARG/STATE/NOT_SUPPORTED/IO/CORE）
 - 生命周期：`lg_<id>_engine_create(desc) → start(event_cb) → command_json() → destroy()`
-- 渲染面：`lg_engine_set_surface(handle, ANativeWindow* / CALayer*)` —— 输入由桥层把触摸/按键序列化为 JSON 命令注入，引擎回帧由 PlatformView 呈现
+- **v2 新增**：`lg_<id>_engine_push_input(engine, json)`（point/key/text，坐标归一化 0~1）与 `lg_<id>_engine_surface_size(engine, w, h)`；可选符号 `lg_<id>_set_android_context(java_vm, context)`（桥 dlsym 探测后调）
+- 渲染面：`lg_<id>_engine_set_surface(handle, ANativeWindow* / CAMetalLayer*)`
 - 事件回调：`void (*lg_event_cb)(void* host, const char* json_utf8)`
-- 每核心前缀宏 `LG_CORE(id)` 展开 `lg_<id>_*` 符号（iOS 静态库符号去重必需）
+- 每核心前缀宏 `LG_CORE(id)` 展开 8 个 `lg_<id>_*` 符号；核心 = 独立 `liblusicgal_<id>.so`（Android）/ `.a`（iOS），桥零核心、纯 dlsym 派发 —— GPL/许可边界即库边界
 
 ## 5. 引擎核心层（native/engines）
 

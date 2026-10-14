@@ -114,6 +114,18 @@ class LusicgalEngines {
 
   Future<void> stop() => sendCommand('stop');
 
+  /// v2：输入事件注入（JSON 见 engine_abi.h：point/key/text；x/y 为 0~1）。
+  Future<int> pushInput(String json) async {
+    final rc = await _method.invokeMethod<int>('pushInput', {'json': json});
+    return rc ?? -1;
+  }
+
+  /// v2：渲染面尺寸变化（旋转/分屏）。
+  Future<int> surfaceSize(int w, int h) async {
+    final rc = await _method.invokeMethod<int>('surfaceSize', {'w': w, 'h': h});
+    return rc ?? -1;
+  }
+
   /// 引擎事件流（EventChannel）。
   static Stream<EngineEvent> _eventStream(String gameId) =>
       _events.receiveBroadcastStream(gameId).map((raw) {

@@ -29,6 +29,7 @@ PINNED=(
   "sena-rs|xmoezzz/sena-rs|f99db788421f2b724f1c57bc0a7c00debbd3624a"
   "xsystem35-sdl2|kichikuou/xsystem35-sdl2|741a96e40733ba2b51eac3f9b57022b7c5015073"
   "aether|AetherKiri/Aether|a7453781f4a753a8d933e49aaa3c2960f1a823e7"
+  "art3m1s-core|Alphaly2K/art3m1s-core|ad90a62cb192b119b7cf8589aa7f87a94bd747c8"
   "yukihub|xm486/YukiHub|35d12c0bb3d693646a3296bfe805561439b9f47c"
 )
 

@@ -15,17 +15,15 @@
 | `verify` | ubuntu-latest | `pub get` → `analyze` → `test` → `flutter create --platforms=android` → 补丁 → `flutter build apk --release` | `app-release.apk`（artifact） |
 | `build-ios`（手动） | macos-latest | `flutter create --platforms=ios` → 补丁 → `flutter build ios --debug --simulator` | 构建通过 |
 
-### `.github/workflows/engines.yml`
+### `.github/workflows/engines.yml`（v2）
 
-四个必绿门禁合并为单一 ubuntu job `gates`（省去重复 setup 与分钟开销）：
+必绿门禁合并为单一 ubuntu job `gates`；**真核 Rust 四核每次 push 交叉编译产出 `.so` artifact**；C/C++ 实验核心仅手动触发：
 
-| Step（job `gates`） | 内容 | 性质 |
+| Job | 内容 | 性质 |
 |---|---|---|
-| C ABI selftest | gcc 编译 `native/`（ABI 头 + stub + selftest）并运行自检 | **必须绿** |
-| JNI bridge ×NDK | NDK（arm64-v8a）交叉编译 JNI 桥 | **必须绿** |
-| Rust FFI gate | `cargo check`/`test` `native/rust/cbridge` | **必须绿** |
-| 上游 pin 校验 | `scripts/fetch_engines.sh --verify`（18 个 pin 全部可解析） | **必须绿** |
-| `onscripter-android` / `sena-android`（手动） | 引擎核心真实交叉编译尝试 | `continue-on-error`（非阻塞，逐个转正） |
+| `gates` | C ABI selftest v2（0x00020000）/ JNI 桥 ×NDK（dlsym 版）/ Rust FFI 门禁（`native/rust/cbridge`，复用 `lg_common`）/ 19 个上游 pin 校验 | **必须绿** |
+| `rust-cores`（matrix: sena/rfvp/siglus/artemis） | `scripts/build_rust_core.sh` 交叉编译 `liblusicgal_<id>.so`（arm64-v8a）→ artifact `lusicgal-core-<id>-arm64` | **push 即跑**（rust-cache 缓存重依赖） |
+| `onscripter-android` / `xsystem35-android` / `kirikiri-android`（手动） | C/C++ 核心交叉编译尝试 | `continue-on-error`（非阻塞，逐个转正） |
 
 ## 本地（可选，CI 均已覆盖）
 
@@ -41,14 +39,29 @@ flutter build apk --release
 flutter build ios --debug --no-codesign
 ```
 
-## 引擎核心构建（实验，非阻塞）
+## 引擎核心构建（v2 核心分发模型）
+
+每个核心 = 独立 `liblusicgal_<id>.so`（Android）/ `liblusicgal_<id>.a`（iOS 静态并入
+pod）。App 的 `liblusicgal_bridge.so` 不链接任何核心 —— 运行期 `dlsym` 派发
+（Kotlin 先 `System.loadLibrary("lusicgal_<id>")` 再经桥 `probeCore`）。
+缺核心 = 探测报告不可用，App 其余功能不受影响。
 
 ```bash
-bash scripts/fetch_engines.sh              # 按 pin 浅拉取 18 个上游 → third_party/upstream/
-bash native/engines/onscripter/build_android.sh   # 例：Yuri NDK 交叉编译
+bash scripts/fetch_engines.sh              # 按 pin 浅拉取 19 个上游 → third_party/upstream/
+bash scripts/patch_engines.sh              # 存档目录注入（siglus/sena/rfvp/krkr2）
+bash scripts/build_rust_core.sh sena       # Rust 核心：sena / rfvp / siglus / artemis
+bash native/engines/onscripter/build_android.sh    # C++ 核心（需上游 script/_fetch.sh）
+bash native/engines/xsystem35/build_android.sh     # C++ 核心（FetchContent 自拉 SDL2）
+bash native/engines/kirikiri/build_android.sh      # C++ 核心（vcpkg + patch_engines.sh）
 ```
 
-各引擎的具体链路（vcpkg triplet / SDL iOS 参数 / cargo-ndk…）见各 `native/engines/<id>/README.md` 与 `docs/ENGINE_NOTES.md`。
+核心产物在 `build/cores/<id>/arm64-v8a/`；作为 `jniLibs` 放入任意 APK 即被
+`EngineHost.probe` 识别（见 docs/ARCHITECTURE.md §核心分发）。renpy 例外 ——
+Route B 外板壳模块（`com.lusicgal.renpy`，Activity 承载 `librenpython.so`），
+不经 ABI 桥，见 docs/ENGINE_NOTES.md。
+
+各引擎的具体链路（vcpkg triplet / SDL 取窗补丁 / cargo 交叉…）见各
+`native/engines/<id>/README.md` 与 `docs/ENGINE_NOTES.md`。
 
 ## widget 测试契约（避免死锁）
 

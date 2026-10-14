@@ -1,7 +1,8 @@
-# ENGINE_NOTES — 16+2 个参考项目调研与"挑选可用代码"结论
+# ENGINE_NOTES — 参考项目调研与"挑选可用代码"结论
 
 > 调研方式：GitHub API 实测（元数据 / 目录树 / README / 关键源码），调研时间见 git 历史。
 > 每个条目标注：**定位**（pinned commit）、**许可**、**移动端方案**、**LusicGal 采纳点**（我们具体拿了什么 / 学了什么）。
+> 文末"v2 真核集成结论"= 各引擎当前实际接线方式（native/engines/* 与 native/rust/shells/*）。
 
 ## 总表
 
@@ -25,6 +26,7 @@
 | 16 | kichikuou/xsystem35-sdl2 | C | GPL-2.0 | ✅ 完整 Android Gradle 工程 | System 3.x 核心 |
 | 17 | AetherKiri/Aether（原 AetherKiri，Artemis 参考） | C++/GDScript | GPL-3.0 | ✅ iOS/Android CI | 多运行时 ABI + AetherMinori |
 | 18 | xm486/YukiHub（同类参考） | Java | GPL-3.0 | ✅ Android 原生 | 管理端交互 + rfvp-build 补丁集 |
+| 19 | Alphaly2K/art3m1s-core | Rust | MPL-2.0 | ✅ Android(Vulkan)+iOS | **Artemis 真核**（minori 引擎重实现） |
 
 Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 
@@ -48,6 +50,7 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 | xsystem35-sdl2 | `741a96e40733ba2b51eac3f9b57022b7c5015073` |
 | AetherKiri | `a7453781f4a753a8d933e49aaa3c2960f1a823e7` |
 | YukiHub | `35d12c0bb3d693646a3296bfe805561439b9f47c` |
+| art3m1s-core | `ad90a62cb192b119b7cf8589aa7f87a94bd747c8` |
 
 ---
 
@@ -142,11 +145,21 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 
 ## 6. Artemis —— AetherKiri/AetherKiri
 - **Godot 4 作为渲染层的多运行时视觉小说平台**（与 LusicGal 目标同构，可作为整体参照系）：`abi/`（**统一引擎 ABI：`engine_api.h` / `engine_gpu_bridge.h` / `engine_options.h` / `engine_runtime_provider.h`**）+ `packages/`（AetherKrkr、AetherSiglus、AetherSoftPal、OnscripterYuri、rfvp、**AetherMinori**…，以 submodule 挂载各运行时）。
-- AetherMinori = minori 引擎（Artemis）实现，即需求中的 "Artemis"。
+- AetherMinori 的 Artemis 运行时为**私有仓库**（AetherInternal 404、SSH submodule）——不可作为 LusicGal 上游。
 - **采纳**（关键）：
   1. **`engine_api.h` 的 ABI 设计**（`struct_size` 版本化、`reserved[]` 字段、handle 型指针、`engine_result_t` 错误码、key/value option 表）→ `native/include/lusicgal/engine_abi.h` 直接借鉴这套模式；
-  2. `packages/*` 的"宿主 + 运行时包"组织方式 → LusicGal `native/engines/*` 的目录协议；
-  3. Artemis 检测规则待 AetherMinori 格式文档化后补全（v1 支持手动指定引擎，见 ROADMAP）。
+  2. `packages/*` 的"宿主 + 运行时包"组织方式 → LusicGal `native/engines/*` 的目录协议。
+
+### Alphaly2K/art3m1s-core —— **Artemis 真核**（v2 采纳）
+- Rust 实现的 minori 引擎（Artemis）运行时，MPL-2.0，v0.4.0，edition 2024（Rust ≥1.85）。
+- FFI：`src/ffi/api.rs` 的 `art3m1s_get_api_v1(&mut usize) -> *const Art3m1sApiV1` **函数表**
+  （60 字段、`abi_version=1`、magic `0x415254334D314150` "ART3M1AP"、前缀稳定）：
+  `runtime_set_external_surface(rt, kind=1=ANativeWindow, win, w,h)`、`runtime_load_project(rt, path, platform)`、
+  `runtime_feed_touch(rt, pointer, phase, x, y)`（phase 0=began/1=moved/2=ended/3=cancel = LG ABI 同构）、
+  `runtime_feed_key(rt, vk, down)`、`runtime_advance_and_present(rt, dt)`、`resources_set_save_dir`、
+  `runtime_set_reported_os` 等；宿主事件队列线缆 = 24B 小端头 [0..4]ver / [4..8]kind(1=log 2=media 3=ui) / [8..16]seq / [16..20]payload_len / [20..24]aux + payload。
+- Android 默认 Vulkan 后端；工程目录（dir）或 `.pfs` 封包挂载。
+- **采纳**：Artemis 核心本体（`native/rust/shells/artemis`，`vulkan-backend` feature；事件转 JSON `{"type":"artemis_log|artemis_media|artemis_ui","aux":N,"payload":…}`）。
 
 ## 7. 同类管理端参考 —— xm486/YukiHub
 - Android 原生（Java/Gradle）的 Galgame 管理与启动器（GPL-3.0，528 星）：本地游戏扫描、外部模拟器入口、游玩记录同步。
@@ -157,15 +170,21 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 
 ---
 
-## 引擎 → 核心选型速查
+## 引擎 → 核心选型速查（v2 实际接线）
 
-| 引擎 | v1 核心来源 | 备选 |
+| 引擎 | v2 核心来源 | 接线方式 |
 |---|---|---|
-| Kirikiri | krkr2（platforms/android + apple） | LauncherC fork |
-| ONScripter | **OnscripterYuri**（CMake/vcpkg，Android CI 现成） | ONScripter-zero（Android 修复）；EN（桌面基线） |
-| Ren'Py | renpy-build（rapt/renios 官方链） | — |
-| KEY 系 | siglus_rs（Rust staticlib） | — |
-| FVP | rfvp（`rfvp-staticlib` + YukiHub 补丁集） | — |
-| SoftPAL | sena-rs（官方双移动平台） | — |
-| System 3.x | xsystem35-sdl2（自带 Android 工程） | — |
-| Artemis | AetherMinori（AetherKiri 内） | — |
+| Kirikiri | **KrKr2-Next**（GPL-3.0，tick 驱动 C ABI `engine_api.h`） | `native/engines/kirikiri/adapter/lg_kirikiri.cpp`：`engine_open_game_async` → 状态轮询 → `engine_tick` 主循环；渲染 = `engine_set_render_target_surface`；`patch_engines.sh` 注入 `krkr_SetAndroidContext/krkr_SetNativeWindow` |
+| ONScripter | **OnscripterYuri**（GPL-2.0，Android SHARED） | `lg_onscripter.cpp`：私有线程调上游 `main(argc,argv)`（`-r <dir> --save-dir <dir> --width/--height`）；SDL2 取窗 = `scripts/patch_sdl_android.sh` + `org.libsdl.app` 最小胶水；输入 → `SDL_PushEvent` |
+| Ren'Py | renpy-build `librenpython.so`（官方产物，LGPL 系） | **Route B 外板壳**：独立模块 `com.lusicgal.renpy`（Activity 继承上游 `PythonSDLActivity`），LusicGal 桥只做 `RenpyLauncher` 转发（`plugins/.../RenpyLauncher.kt`）——不经 ABI 桥 |
+| Siglus/RealLive/AVG32/UK2 | **siglus_rs game_launcher**（MPL-2.0） | `native/rust/shells/siglus`：`game_probe_json` 自动判子引擎（"siglus"→`siglus_android_*` wgpu 路径，其余→`game_fb_*` CPU 帧路径 blit）；`REALLIVE_SAVE_DIR` + `LUSICGAL_SAVE_DIR` 双环境变量 |
+| FVP | **rfvp crate**（MPL-2.0） | `native/rust/shells/rfvp`：`rfvp_android_create/step/render`（wgpu）；触摸 phase 与 LG ABI 逐字相同（0/1/2/3） |
+| SoftPAL | **sena-rs pal-vm**（MPL-2.0） | `native/rust/shells/sena`：`sena_host_create(game_root, nls, w,h)` + `sena_host_step`（0=run 1=end 2=error）+ CPU 帧 `sena_host_frame_generation` 变化检测 → `lg_common::blit` |
+| System 3.x | **xsystem35-sdl2**（GPL-2.0，Android SHARED） | `lg_xsystem35.cpp`：私有线程 `main(6, argv)`（`-gamedir <dir> -savedir <dir> -noimagecursor`）；同 onscripter 的 SDL 取窗/胶水链路 |
+| Artemis | **art3m1s-core**（MPL-2.0） | `native/rust/shells/artemis`：`art3m1s_get_api_v1` 函数表全量镜像（60 字段 size/version/magic 校验）→ `runtime_set_external_surface(kind=1)` + `runtime_load_project` + `runtime_advance_and_present` + 24B 头事件泵 → JSON 事件 |
+
+通用约定：
+- 核心全部为**独立动态库** `liblusicgal_<id>.so`（Android）/ `liblusicgal_<id>.a`（iOS 静态并入 pod）——GPL 边界隔离 + 按需分发。
+- 桥 `liblusicgal_bridge.so` 零核心：`dlsym(RTLD_DEFAULT, "lg_<id>_<symbol>")` 运行期派发（JNI 侧 `EngineHost.ensureCore` 先 `System.loadLibrary("lusicgal_<id>")`）。
+- 输入统一 JSON（`engine_abi.h` v2）：point/key/text；键名→各核心码表映射在壳内（VK 基准在 `lg_common::input::vk_code`）。
+- 存档统一 `desc.save_path` → 壳设 `LUSICGAL_SAVE_DIR` → `scripts/patch_engines.sh` 的上游补丁消费（siglus/sena/rfvp；reallive 原生 `REALLIVE_SAVE_DIR`；KrKr2 原生 `writable_path`）。

@@ -2,21 +2,22 @@ import Darwin
 import Flutter
 import UIKit
 
-/// LusicGal 平台桥（iOS）：
-/// - MethodChannel `lusicgal/engines`：probeEngines / launch / command
-/// - EventChannel  `lusicgal/engineEvents`
+/// LusicGal 平台桥（iOS v2）：
+/// - MethodChannel `lusicgal/engines`：probeEngines / launch / command /
+///   pushInput / surfaceSize
+/// - EventChannel  `lusicgal/engineEvents`（核心线程 → 主队列 → Dart）
 /// - PlatformView  `lusicgal-engine-view`
 ///
-/// 核心探测用 dlsym 检查静态链接符号 `lg_<engine>_engine_create`（engine_abi.h）。
+/// 派发经 native/bridge/ios 的 lg_ios_*（dlsym 静态符号 + 弱 stub 兜底）。
 /// 注：FlutterStreamHandler 的可选协议方法必须在类型声明处实现
 /// （extension 中的 @objc 可选方法运行期不可见）。
 public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
-    /// RTLD_DEFAULT：dlsym 在全局符号表检索。
-    private static let rtldDefault: UnsafeMutableRawPointer? =
-        UnsafeMutableRawPointer(bitPattern: -2)
-
     private var eventSink: FlutterEventSink?
+
+    /// 事件中继：C 回调闭包不能捕获上下文（@convention(c)），
+    /// 经静态单例转发到活动实例。
+    static weak var shared: LusicgalEnginesPlugin?
 
     private let engineIds = [
         "kirikiri", "onscripter", "renpy", "siglus",
@@ -27,6 +28,7 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         let channel = FlutterMethodChannel(
             name: "lusicgal/engines", binaryMessenger: registrar.messenger())
         let instance = LusicgalEnginesPlugin()
+        LusicgalEnginesPlugin.shared = instance
         registrar.addMethodCallDelegate(instance, channel: channel)
 
         let events = FlutterEventChannel(
@@ -36,6 +38,18 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         registrar.register(
             EngineViewFactory(messenger: registrar.messenger()),
             withId: "lusicgal-engine-view")
+
+        // 事件回流：核心线程 → C 回调（无捕获）→ 主队列 → 解析 → EventChannel。
+        lg_ios_set_event_callback { json in
+            guard let json = json else { return }
+            let text = String(cString: json)
+            DispatchQueue.main.async {
+                guard let shared = LusicgalEnginesPlugin.shared else { return }
+                let data = Data(text.utf8)
+                let decoded = try? JSONSerialization.jsonObject(with: data)
+                shared.eventSink?(decoded ?? ["type": "engine", "payload": text])
+            }
+        }
     }
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -45,8 +59,11 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         case "launch":
             handleLaunch(call, result: result)
         case "command":
-            // 无活动核心会话时静默成功（命令幂等）。
-            result(nil)
+            handleCommand(call, result: result)
+        case "pushInput":
+            handlePushInput(call, result: result)
+        case "surfaceSize":
+            handleSurfaceSize(call, result: result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -59,22 +76,66 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
             return
         }
         let gameId = args["gameId"] as? String ?? ""
-        let info = probe(engineId)
-        if info["available"] as? Bool == true {
-            // 核心已链接：调用 ABI 入口（v1 尚无核心，此分支为接入预留）。
-            result(["ok": false, "errorCode": "CORE_ENTRY_NOT_IMPLEMENTED",
-                    "message": "核心入口尚未接线（见 native/bridge 与 docs/ROADMAP.md）"])
+        let gamePath = args["gamePath"] as? String ?? ""
+        let savePath = args["savePath"] as? String ?? ""
+        let options = args["options"] as? [String: Any] ?? [:]
+        guard let optionsJson = try? String(
+            data: JSONSerialization.data(withJSONObject: options),
+            encoding: .utf8) else {
+            result(["ok": false, "errorCode": "BAD_ARGS", "message": "options 序列化失败"])
             return
         }
-        eventSink?([
-            "type": "core_missing",
-            "data": ["engineId": engineId, "gameId": gameId],
-        ])
-        result([
-            "ok": false,
-            "errorCode": "CORE_NOT_BUNDLED",
-            "message": (info["message"] as? String) ?? "核心未打包",
-        ])
+        let info = probe(engineId)
+        if info["available"] as? Bool != true {
+            eventSink?([
+                "type": "core_missing",
+                "data": ["engineId": engineId, "gameId": gameId],
+            ])
+            result([
+                "ok": false,
+                "errorCode": "CORE_NOT_BUNDLED",
+                "message": (info["message"] as? String) ?? "核心未打包",
+            ])
+            return
+        }
+        let rc = lg_ios_launch(
+            engineId, gameId, gamePath, savePath, optionsJson)
+        result(rc == 0 ? ["ok": true, "message": nil]
+                      : ["ok": false, "message": "核心返回码 \(rc)"])
+    }
+
+    private func handleCommand(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let command = call.argument<String>("command") else {
+            result(FlutterMethodNotImplemented)
+            return
+        }
+        let argsJson = (call.arguments as? [String: Any])?["args"] as? [String: Any] ?? [:]
+        guard let json = try? String(
+            data: JSONSerialization.data(withJSONObject: argsJson),
+            encoding: .utf8) else {
+            result(nil)
+            return
+        }
+        let full = "{\"command\":\"\(command)\",\"args\":\(json)}"
+        _ = lg_ios_command(full)
+        // 无活动会话/核心不支持时静默（命令幂等）。
+        result(nil)
+    }
+
+    private func handlePushInput(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let json = call.argument<String>("json") else {
+            result(FlutterMethodNotImplemented)
+            return
+        }
+        result(Int(lg_ios_push_input(json)))
+    }
+
+    private func handleSurfaceSize(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard let w = call.argument<Int>("w"), let h = call.argument<Int>("h") else {
+            result(FlutterMethodNotImplemented)
+            return
+        }
+        result(Int(lg_ios_surface_size(Int32(w), Int32(h))))
     }
 
     public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
@@ -88,13 +149,13 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
     }
 
     private func probe(_ engineId: String) -> [String: Any?] {
-        let symbol = "lg_\(engineId)_engine_create"
-        if dlsym(LusicgalEnginesPlugin.rtldDefault, symbol) != nil {
+        if lg_ios_probe(engineId) == 1 {
+            let abi = lg_ios_core_abi_version(engineId)
             return ["engineId": engineId, "available": true,
-                    "version": nil, "message": nil]
+                    "version": String(format: "0x%08x", abi), "message": nil]
         }
         return ["engineId": engineId, "available": false, "version": nil,
-                "message": "核心未打包：静态符号 \(symbol) 未链接（构建见 docs/BUILD.md 与 .github/workflows/engines.yml）"]
+                "message": "核心未链接：liblusicgal_\(engineId).a 未并入（构建见 docs/BUILD.md）"]
     }
 }
 
@@ -141,7 +202,7 @@ class EnginePlaceholderView: NSObject, FlutterPlatformView {
         engine = \(engineId)
         game = \(gameId)
 
-        核心接入后，此处将由引擎视图渲染游戏画面。
+        核心未链接：该引擎的静态库尚未并入（docs/BUILD.md）。
         """
     }
 

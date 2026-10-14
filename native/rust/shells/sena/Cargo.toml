@@ -1,0 +1,18 @@
+[package]
+name = "lusicgal_sena_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "LusicGal Sena(SoftPAL) 核心：sena-rs pal-vm 的 lg_sena_engine_* 壳。"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+lg_common = { path = "../../lg_common" }
+serde_json = "1"
+
+# 上游核心（scripts/fetch_engines.sh sena-rs 拉取到 third_party/upstream）。
+# 仅需其 no_mangle C 符号（sena_host_*），不引用其 Rust item。
+[dependencies.pal-vm]
+path = "../../../../third_party/upstream/sena-rs/crates/pal-vm"

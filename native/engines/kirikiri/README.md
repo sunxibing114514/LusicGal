@@ -1,17 +1,34 @@
-# Kirikiri / KAG 核心（krkr2 家族）
+# Kirikiri / KAG 核心
 
-## 选型
+## 选型（v2 定案）
 
-**核心基底 = 2468785842/krkr2**（`platforms/android` 完整 Gradle 工程 + `platforms/apple` iOS/macOS；CMakePresets + vcpkg overlay triplets）。该工程已被两个下游验证：
-- **KiriKiri-LauncherC**（fork）：模块化工程化 + per-game 偏好配置 + Breakpad/Dobby/oneTBB/mimalloc 的移动端接入清单。
-- **KrKr2-Next**：Flutter + ANGLE 路线（证明 iOS 走 ANGLE→Metal，而非裸 GLES）。
+**核心 = reAAAq/KrKr2-Next**（GPL-3.0，pin `1abd1ed4`）—— 而非早期候选
+`2468785842/krkr2`。理由：KrKr2-Next 提供 **tick 驱动的纯 C ABI**
+（`bridge/engine_api/include/engine_api.h`，`ENGINE_API_VERSION 0x01000000`）：
 
-## 集成路径（v0.3，docs/ROADMAP.md）
+- `engine_create(engine_create_desc_t{writable_path, cache_path})`
+- `engine_open_game_async(h, game_root, startup_script)` + 启动状态轮询 + 日志排水
+- `engine_tick(h, delta_ms)` —— 无窗口事件泵，宿主每帧驱动
+- `engine_send_input(h, engine_input_event_t)` —— 指针/键/文本/BACK 四类
+- `engine_set_render_target_surface(h, ANativeWindow*, w, h)` —— Android EGL 直渲宿主面
+- `engine_set_surface_size` / `engine_pause` / `engine_resume` / `engine_destroy`
 
-1. `scripts/fetch_engines.sh` 拉取 `kirikiri2`（pin `dca7264`）。
-2. Android：复用其 `platforms/android` 工程参数构建 `liblusicgal_kirikiri.so`。
-3. iOS：`platforms/apple` + ANGLE（学 KrKr2-Next）。
-4. ABI 包装：TJS2 主循环 → `lg_kirikiri_engine_set_surface`，XP3 自动挂载（`data.xp3` 等）。
+存档 = `writable_path`（原生支持，无需补丁）。krkr2 / LauncherC 仍保留在调研
+矩阵中（工程化与 per-game 偏好参考，见 docs/ENGINE_NOTES.md §Kirikiri）。
+
+## 集成路径（v2，`adapter/lg_kirikiri.cpp`）
+
+1. `scripts/fetch_engines.sh kirikiri-next` 拉取源码。
+2. `scripts/patch_engines.sh kirikiri-next` —— 给 `platforms/android/cpp/krkr2_android.cpp`
+   增补纯 C 注入入口 `krkr_SetAndroidContext(vm, ctx)` / `krkr_SetNativeWindow(win, w, h)`
+   （原实现只有绑定其自家 Kotlin 插件的 JNI 命名 setter）。
+3. `native/engines/kirikiri/build_android.sh`：NDK 工具链 + `VCPKG_TARGET_ANDROID=ON`
+   （arm64-android 三元组）构建 `libengine_api.so` + `liblusicgal_kirikiri.so`。
+4. 运行期：桥 dlsym 派发；`lg_kirikiri_set_android_context` 在 launch 前注入 JVM/Context。
+
+适配器主循环：open_game_async → 轮询 `engine_get_startup_state`（SUCCEEDED/FAILED，
+日志经 `engine_drain_startup_logs` → log 事件）→ 等表面（condvar，10s）→
+tick 循环（表面重绑 gen 检测 + 输入队列消费 + `engine_tick(≤100ms)`）。
 
 ## 检测特征
 
@@ -19,4 +36,5 @@
 
 ## 许可
 
-仓库标 NOASSERTION（血统为 KrKr 私有许可声明，fork 群按 GPL-3 处理）。分发前必须复检其 LICENSE 原文 —— 见 docs/LICENSE_NOTES.md。
+GPL-3.0（badge）—— 与主 App 同许可；独立 `liblusicgal_kirikiri.so` 分发，
+随附上游 LICENSE + `patch_engines.sh` diff 声明（docs/LICENSE_NOTES.md）。

@@ -1,0 +1,20 @@
+[package]
+name = "lusicgal_artemis_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "LusicGal Artemis 核心：art3m1s-core 的 lg_artemis_engine_* 壳。"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+lg_common = { path = "../../lg_common" }
+serde_json = "1"
+
+# 上游核心（scripts/fetch_engines.sh art3m1s-core 拉取到 third_party/upstream）。
+# 用其 C ABI 面（art3m1s_get_api_v1 函数表），不 import 其 Rust item。
+[dependencies.art3m1s-core]
+path = "../../../../third_party/upstream/art3m1s-core"
+default-features = false
+features = ["vulkan-backend"]

@@ -228,6 +228,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                       },
                     ),
                     IconButton(
+                      tooltip: '自动播放',
+                      color: Colors.white,
+                      icon: const Icon(Icons.fast_forward_outlined),
+                      onPressed: () => _host.key('auto'),
+                    ),
+                    IconButton(
+                      tooltip: '快进（按住）',
+                      color: Colors.white,
+                      icon: const Icon(Icons.double_arrow_outlined),
+                      onPressed: () => _host.key('speed'),
+                    ),
+                    IconButton(
+                      tooltip: '跳过',
+                      color: Colors.white,
+                      icon: const Icon(Icons.skip_next_outlined),
+                      onPressed: () => _host.key('skip'),
+                    ),
+                    IconButton(
                       tooltip: '存档',
                       color: Colors.white,
                       icon: const Icon(Icons.save_outlined),

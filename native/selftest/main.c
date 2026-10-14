@@ -40,6 +40,14 @@ int main(void) {
   CHECK(lg_rfvp_engine_create(&desc, &engine) == LG_ERR_NOT_SUPPORTED);
   CHECK(lg_siglus_engine_command_json(NULL, "{}") == LG_ERR_NOT_SUPPORTED);
 
+  /* v2 新增符号：弱 stub 同样返回 NOT_SUPPORTED，宿主回退 command_json。 */
+  CHECK(lg_onscripter_engine_push_input(
+            NULL, "{\"type\":\"key\",\"code\":\"ok\",\"state\":\"down\"}") ==
+        LG_ERR_NOT_SUPPORTED);
+  CHECK(lg_xsystem35_engine_surface_size(NULL, 1280, 720) ==
+        LG_ERR_NOT_SUPPORTED);
+  CHECK(lg_artemis_engine_set_surface(NULL, NULL) == LG_ERR_NOT_SUPPORTED);
+
   /* 选项工具。 */
   CHECK(lg_option_get_num(desc.options_json, "resolutionScale", 1.0) == 1.5);
   CHECK(lg_option_get_num(desc.options_json, "missing", 42.0) == 42.0);

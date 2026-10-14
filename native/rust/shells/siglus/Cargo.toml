@@ -1,0 +1,18 @@
+[package]
+name = "lusicgal_siglus_ffi"
+version = "0.1.0"
+edition = "2021"
+description = "LusicGal Siglus/KEY 系核心：siglus_rs game_launcher 的 lg_siglus_engine_* 壳。"
+license = "GPL-3.0-or-later"
+
+[lib]
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+lg_common = { path = "../../lg_common" }
+serde_json = "1"
+
+# 上游核心（scripts/fetch_engines.sh siglus-rs 拉取到 third_party/upstream）。
+# game_launcher 聚合 avg32/reallive/uk2/siglus；符号经 C 面（game_fb_* / siglus_android_*）。
+[dependencies.game_launcher]
+path = "../../../../third_party/upstream/siglus-rs/crates/game_launcher"

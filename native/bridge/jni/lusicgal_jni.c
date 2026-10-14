@@ -1,39 +1,139 @@
 /*
- * LusicGal JNI 桥：Java_com_lusicgal_engines_CoreNative_* → C ABI。
+ * LusicGal JNI 桥（v2）：Java_com_lusicgal_engines_CoreNative_* → C ABI。
  *
- * 核心符号以弱引用接入（__attribute__((weak))）：核心未打包/未链接时
- * 桥仍然可编译链接，运行时返回 LG_ERR_NOT_SUPPORTED。
- * 真实核心由 native/engines/<id> 的构建脚本产出 liblusicgal_<id>.so，
- * 由宿主 Gradle（后续版本）链接进 APK。
+ * 派发方式：运行期 dlsym(RTLD_DEFAULT, "lg_<id>_…")。
+ *  - Android：核心以独立 liblusicgal_<id>.so 发布（Kotlin 先 loadLibrary
+ *    再 probeCore），桥本身不链接任何核心 —— 核心可拆包/可下载（许可策略
+ *    见 docs/LICENSE_NOTES.md）。
+ *  - iOS：静态链接（弱 stub 兜底，见 native/stubs），dlsym 同样适用。
+ *
+ * 会话：单活动会话（v1 约定：一次运行一个游戏；多开在 v0.5 后再议）。
+ * 事件：核心线程 → JVM AttachCurrentThread → Kotlin onEvent(String) → 主线程
+ * → EventChannel。
  */
 #include "lusicgal/engine_abi.h"
 
+#include <dlfcn.h>
 #include <jni.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* 弱引用声明：核心存在则由动态库提供，否则为 NULL。 */
-#define LG_WEAK_CORE(id)                                                       \
-  extern uint32_t lg_##id##_abi_version(void) __attribute__((weak));           \
-  extern lg_result_t lg_##id##_engine_create(                                  \
-      const lg_engine_desc_t *, lg_engine_t *) __attribute__((weak));          \
-  extern lg_result_t lg_##id##_engine_start(lg_engine_t, lg_event_cb_t)        \
-      __attribute__((weak));                                                  \
-  extern lg_result_t lg_##id##_engine_command_json(lg_engine_t,                \
-                                                   const char *)              \
-      __attribute__((weak));                                                  \
-  extern lg_result_t lg_##id##_engine_destroy(lg_engine_t) __attribute__((weak));
+#ifdef __ANDROID__
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#endif
 
-LG_CORE_LIST(LG_WEAK_CORE)
+/* ---- 核心 API 运行期解析 -------------------------------------------------- */
+
+typedef struct lg_core_api {
+  uint32_t (*abi_version)(void);
+  lg_result_t (*create)(const lg_engine_desc_t *, lg_engine_t *);
+  lg_result_t (*start)(lg_engine_t, lg_event_cb_t);
+  lg_result_t (*command_json)(lg_engine_t, const char *);
+  lg_result_t (*set_surface)(lg_engine_t, void *);
+  lg_result_t (*push_input)(lg_engine_t, const char *);
+  lg_result_t (*surface_size)(lg_engine_t, int32_t, int32_t);
+  lg_result_t (*destroy)(lg_engine_t);
+} lg_core_api_t;
+
+static void lg_resolve_sym(void **slot, const char *engine_id,
+                           const char *suffix) {
+  char buf[96];
+  if (snprintf(buf, sizeof(buf), "lg_%s_%s", engine_id, suffix) >=
+      (int)sizeof(buf)) {
+    *slot = NULL;
+    return;
+  }
+  *slot = dlsym(RTLD_DEFAULT, buf);
+}
+
+/* 解析核心符号集。返回 1 = abi_version 符号存在（核心已加载）。 */
+static int lg_resolve(const char *engine_id, lg_core_api_t *api) {
+  memset(api, 0, sizeof(*api));
+  if (engine_id == NULL) return 0;
+  lg_resolve_sym((void **)&api->abi_version, engine_id, "abi_version");
+  if (api->abi_version == NULL) return 0;
+  lg_resolve_sym((void **)&api->create, engine_id, "engine_create");
+  lg_resolve_sym((void **)&api->start, engine_id, "engine_start");
+  lg_resolve_sym((void **)&api->command_json, engine_id, "engine_command_json");
+  lg_resolve_sym((void **)&api->set_surface, engine_id, "engine_set_surface");
+  lg_resolve_sym((void **)&api->push_input, engine_id, "engine_push_input");
+  lg_resolve_sym((void **)&api->surface_size, engine_id, "engine_surface_size");
+  lg_resolve_sym((void **)&api->destroy, engine_id, "engine_destroy");
+  return 1;
+}
+
+/* ---- 会话 ------------------------------------------------------------------ */
 
 typedef struct {
-  const char *id;
+  char id[32];
+  lg_core_api_t api;
   lg_engine_t engine;
   int started;
 } lg_session_t;
 
 static lg_session_t g_session;
+
+static int session_alive(void) {
+  return g_session.started && g_session.engine != NULL;
+}
+
+/* ---- 事件回流：核心线程 → Kotlin ------------------------------------------ */
+
+static JavaVM *g_vm = NULL;
+static jobject g_sink_ref = NULL;
+static jmethodID g_sink_method = NULL;
+
+jint JNI_OnLoad(JavaVM *vm, void *reserved) {
+  (void)reserved;
+  g_vm = vm;
+  return JNI_VERSION_1_6;
+}
+
+static void emit_event(void *host, const char *json) {
+  (void)host;
+  if (g_vm == NULL || g_sink_ref == NULL || g_sink_method == NULL || json == NULL) {
+    return;
+  }
+  JNIEnv *env = NULL;
+  int attached = 0;
+  if ((*g_vm)->GetEnv(g_vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
+    if ((*g_vm)->AttachCurrentThread(g_vm, (void **)&env, NULL) != JNI_OK) {
+      return;
+    }
+    attached = 1;
+  }
+  jstring jstr = (*env)->NewStringUTF(env, json);
+  if (jstr != NULL) {
+    (*env)->CallVoidMethod(env, g_sink_ref, g_sink_method, jstr);
+    (*env)->DeleteLocalRef(env, jstr);
+  }
+  if (attached) {
+    (*g_vm)->DetachCurrentThread(g_vm);
+  }
+}
+
+/* ---- Android 上下文注入（v2） -------------------------------------------- */
+
+static jobject g_context_ref = NULL;
+
+/* 可选核心符号 lg_<id>_set_android_context(java_vm, context)：
+ * 供上游音频栈（kira→cpal→Oboe / ndk-context）初始化。launch 前注入。 */
+static void inject_android_context(const char *engine_id) {
+  if (g_vm == NULL || g_context_ref == NULL || engine_id == NULL) return;
+  char buf[96];
+  if (snprintf(buf, sizeof(buf), "lg_%s_set_android_context", engine_id) >=
+      (int)sizeof(buf)) {
+    return;
+  }
+  void *sym = dlsym(RTLD_DEFAULT, buf);
+  if (sym == NULL) return;
+  typedef void (*set_ctx_fn)(void *, void *);
+  ((set_ctx_fn)sym)((void *)g_vm, (void *)g_context_ref);
+}
+
+/* ---- 工具 ------------------------------------------------------------------ */
 
 static char *jstr_dup(JNIEnv *env, jstring s) {
   if (s == NULL) return NULL;
@@ -44,19 +144,43 @@ static char *jstr_dup(JNIEnv *env, jstring s) {
   return out;
 }
 
-static void emit_event(void *host, const char *json) {
-  (void)host;
-  (void)json;
-  /* v1：事件经 EventChannel 由宿主轮询/桥接；真实核心接入时由
-   * 平台桥（Kotlin）通过 JNI 回调把 JSON 事件推送到 EventChannel。 */
+/* ---- JNI 入口 -------------------------------------------------------------- */
+
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_probeCore(JNIEnv *env, jclass clazz,
+                                               jstring engine_id) {
+  (void)clazz;
+  char *id = jstr_dup(env, engine_id);
+  if (id == NULL) return 0;
+  lg_core_api_t api;
+  int found = lg_resolve(id, &api);
+  free(id);
+  return found;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_coreAbiVersion(JNIEnv *env, jclass clazz,
+                                                    jstring engine_id) {
+  (void)clazz;
+  char *id = jstr_dup(env, engine_id);
+  if (id == NULL) return 0;
+  lg_core_api_t api;
+  jint v = 0;
+  if (lg_resolve(id, &api) && api.abi_version != NULL) {
+    v = (jint)api.abi_version();
+  }
+  free(id);
+  return v;
 }
 
 JNIEXPORT jint JNICALL
 Java_com_lusicgal_engines_CoreNative_launch(JNIEnv *env, jclass clazz,
                                             jstring engine_id, jstring game_id,
-                                            jstring game_path, jstring save_path,
+                                            jstring game_path,
+                                            jstring save_path,
                                             jstring options_json) {
   (void)clazz;
+  if (session_alive()) return LG_ERR_INVALID_STATE;
   if (engine_id == NULL || game_path == NULL) return LG_ERR_INVALID_ARGUMENT;
 
   char *id = jstr_dup(env, engine_id);
@@ -73,7 +197,19 @@ Java_com_lusicgal_engines_CoreNative_launch(JNIEnv *env, jclass clazz,
     return LG_ERR_INVALID_ARGUMENT;
   }
 
-  lg_result_t rc = LG_ERR_NOT_SUPPORTED;
+  lg_core_api_t api;
+  if (!lg_resolve(id, &api) || api.create == NULL) {
+    free(id);
+    free(gid);
+    free(gpath);
+    free(spath);
+    free(opts);
+    return LG_ERR_NOT_SUPPORTED;
+  }
+  /* 核心可先拿到 JVM/Context（音频初始化需要，见 inject_android_context）。 */
+  inject_android_context(id);
+
+  lg_result_t rc;
   lg_engine_desc_t desc;
   memset(&desc, 0, sizeof(desc));
   desc.struct_size = (uint32_t)sizeof(desc);
@@ -87,44 +223,29 @@ Java_com_lusicgal_engines_CoreNative_launch(JNIEnv *env, jclass clazz,
   desc.host = NULL;
 
   lg_engine_t engine = NULL;
-
-#define LG_TRY_CORE(id_)                                                       \
-  do {                                                                         \
-    if (lg_##id_##_engine_create != NULL && strcmp(id, #id_) == 0) {           \
-      rc = lg_##id_##_engine_create(&desc, &engine);                           \
-    }                                                                          \
-  } while (0);
-  LG_CORE_LIST(LG_TRY_CORE)
-#undef LG_TRY_CORE
-
-  if (rc == LG_OK && engine != NULL) {
-#define LG_START_CORE(id_)                                                     \
-  do {                                                                         \
-    if (lg_##id_##_engine_start != NULL && strcmp(id, #id_) == 0) {            \
-      rc = lg_##id_##_engine_start(engine, emit_event);                        \
-    }                                                                          \
-  } while (0);
-    LG_CORE_LIST(LG_START_CORE)
-#undef LG_START_CORE
+  rc = api.create(&desc, &engine);
+  if (rc == LG_OK && engine != NULL && api.start != NULL) {
+    rc = api.start(engine, emit_event);
     if (rc == LG_OK) {
-      free(g_session.id);
-      g_session.id = strdup(id);
+      memset(&g_session, 0, sizeof(g_session));
+      snprintf(g_session.id, sizeof(g_session.id), "%s", id);
+      g_session.api = api;
       g_session.engine = engine;
       g_session.started = 1;
-    } else {
-      /* 启动失败：销毁半成品实例，避免泄漏。 */
-#define LG_DESTROY_CORE(id_)                                                   \
-  do {                                                                         \
-    if (lg_##id_##_engine_destroy != NULL && strcmp(id, #id_) == 0) {          \
-      lg_##id_##_engine_destroy(engine);                                        \
-    }                                                                          \
-  } while (0);
-      LG_CORE_LIST(LG_DESTROY_CORE)
-#undef LG_DESTROY_CORE
+    } else if (api.destroy != NULL) {
+      api.destroy(engine);
     }
+  } else if (rc == LG_OK && engine != NULL && api.destroy != NULL) {
+    /* 无 start 入口：销毁半成品。 */
+    api.destroy(engine);
+    rc = LG_ERR_NOT_SUPPORTED;
   }
 
-  /* desc 的字符串所有权交由核心（按 ABI 约定核心在 create 内复制）。 */
+  free(id);
+  free(gid);
+  free(gpath);
+  free(spath);
+  free(opts);
   return (jint)rc;
 }
 
@@ -134,7 +255,7 @@ Java_com_lusicgal_engines_CoreNative_command(JNIEnv *env, jclass clazz,
                                              jstring args_json) {
   (void)clazz;
   (void)engine_id;
-  if (!g_session.started || g_session.engine == NULL) return LG_ERR_INVALID_STATE;
+  if (!session_alive()) return LG_ERR_INVALID_STATE;
   if (command == NULL) return LG_ERR_INVALID_ARGUMENT;
   char *cmd = jstr_dup(env, command);
   char *args = jstr_dup(env, args_json);
@@ -142,27 +263,140 @@ Java_com_lusicgal_engines_CoreNative_command(JNIEnv *env, jclass clazz,
     free(args);
     return LG_ERR_INVALID_ARGUMENT;
   }
-  size_t n = strlen(cmd) + (args ? strlen(args) : 0) + 64;
-  char *json = (char *)malloc(n);
   lg_result_t rc = LG_ERR_NOT_SUPPORTED;
-  if (json != NULL) {
-    if (args != NULL) {
-      snprintf(json, n, "{\"command\":\"%s\",\"args\":%s}", cmd, args);
+  if (g_session.api.command_json != NULL) {
+    size_t n = strlen(cmd) + (args ? strlen(args) : 0) + 64;
+    char *json = (char *)malloc(n);
+    if (json != NULL) {
+      if (args != NULL) {
+        snprintf(json, n, "{\"command\":\"%s\",\"args\":%s}", cmd, args);
+      } else {
+        snprintf(json, n, "{\"command\":\"%s\"}", cmd);
+      }
+      rc = g_session.api.command_json(g_session.engine, json);
+      free(json);
     } else {
-      snprintf(json, n, "{\"command\":\"%s\"}", cmd);
+      rc = LG_ERR_IO;
     }
-#define LG_CMD_CORE(id_)                                                       \
-  do {                                                                         \
-    if (lg_##id_##_engine_command_json != NULL && g_session.id != NULL &&       \
-        strcmp(g_session.id, #id_) == 0) {                                      \
-      rc = lg_##id_##_engine_command_json(g_session.engine, json);              \
-    }                                                                          \
-  } while (0);
-    LG_CORE_LIST(LG_CMD_CORE)
-#undef LG_CMD_CORE
-    free(json);
   }
   free(cmd);
   free(args);
   return (jint)rc;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_pushInput(JNIEnv *env, jclass clazz,
+                                               jstring json) {
+  (void)clazz;
+  if (!session_alive()) return LG_ERR_INVALID_STATE;
+  char *input = jstr_dup(env, json);
+  if (input == NULL) return LG_ERR_INVALID_ARGUMENT;
+  lg_result_t rc = LG_ERR_NOT_SUPPORTED;
+  if (g_session.api.push_input != NULL) {
+    rc = g_session.api.push_input(g_session.engine, input);
+  } else if (g_session.api.command_json != NULL) {
+    /* v1 核心回退：command_json {"command":"input","event":…}。 */
+    size_t n = strlen(input) + 32;
+    char *wrap = (char *)malloc(n);
+    if (wrap != NULL) {
+      snprintf(wrap, n, "{\"command\":\"input\",\"event\":%s}", input);
+      rc = g_session.api.command_json(g_session.engine, wrap);
+      free(wrap);
+    } else {
+      rc = LG_ERR_IO;
+    }
+  }
+  free(input);
+  return (jint)rc;
+}
+
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_surfaceSize(JNIEnv *env, jclass clazz,
+                                                 jint w, jint h) {
+  (void)env;
+  (void)clazz;
+  if (!session_alive()) return LG_ERR_INVALID_STATE;
+  if (w <= 0 || h <= 0) return LG_ERR_INVALID_ARGUMENT;
+  if (g_session.api.surface_size == NULL) return LG_ERR_NOT_SUPPORTED;
+  return (jint)g_session.api.surface_size(g_session.engine, (int32_t)w,
+                                         (int32_t)h);
+}
+
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_attachSurface(JNIEnv *env, jclass clazz,
+                                                   jobject surface) {
+  (void)clazz;
+  if (!session_alive()) return LG_ERR_INVALID_STATE;
+  if (surface == NULL) return LG_ERR_INVALID_ARGUMENT;
+  if (g_session.api.set_surface == NULL) return LG_ERR_NOT_SUPPORTED;
+#ifdef __ANDROID__
+  ANativeWindow *window = ANativeWindow_fromSurface(env, surface);
+  if (window == NULL) return LG_ERR_INVALID_ARGUMENT;
+  lg_result_t rc = g_session.api.set_surface(g_session.engine, (void *)window);
+  if (rc != LG_OK) {
+    ANativeWindow_release(window);
+  }
+  return (jint)rc;
+#else
+  (void)surface;
+  return LG_ERR_NOT_SUPPORTED;
+#endif
+}
+
+/* v2：注册应用上下文（onAttachedToEngine 调一次；launch 前注入核心）。 */
+JNIEXPORT void JNICALL
+Java_com_lusicgal_engines_CoreNative_initAndroid(JNIEnv *env, jclass clazz,
+                                                 jobject context) {
+  (void)clazz;
+  if (g_context_ref != NULL) {
+    (*env)->DeleteGlobalRef(env, g_context_ref);
+    g_context_ref = NULL;
+  }
+  if (context != NULL) {
+    g_context_ref = (*env)->NewGlobalRef(env, context);
+  }
+}
+
+/* 会话结束（核心回调 exit 事件或 Dart 调 stop 后调用；幂等）。 */
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_shutdown(JNIEnv *env, jclass clazz) {
+  (void)env;
+  (void)clazz;
+  if (!session_alive()) return LG_OK;
+  lg_result_t rc = LG_OK;
+  if (g_session.api.command_json != NULL) {
+    g_session.api.command_json(g_session.engine, "{\"command\":\"stop\"}");
+  }
+  if (g_session.api.destroy != NULL) {
+    rc = g_session.api.destroy(g_session.engine);
+  }
+  memset(&g_session, 0, sizeof(g_session));
+  return (jint)rc;
+}
+
+JNIEXPORT void JNICALL
+Java_com_lusicgal_engines_CoreNative_setEventSink(JNIEnv *env, jclass clazz,
+                                                 jobject sink) {
+  (void)clazz;
+  if (g_sink_ref != NULL) {
+    (*env)->DeleteGlobalRef(env, g_sink_ref);
+    g_sink_ref = NULL;
+    g_sink_method = NULL;
+  }
+  if (sink == NULL) return;
+  g_sink_ref = (*env)->NewGlobalRef(env, sink);
+  if (g_sink_ref == NULL) return;
+  jclass klass = (*env)->GetObjectClass(env, g_sink_ref);
+  if (klass == NULL) {
+    (*env)->DeleteGlobalRef(env, g_sink_ref);
+    g_sink_ref = NULL;
+    return;
+  }
+  g_sink_method =
+      (*env)->GetMethodID(env, klass, "onEvent", "(Ljava/lang/String;)V");
+  (*env)->DeleteLocalRef(env, klass);
+  if (g_sink_method == NULL) {
+    (*env)->DeleteGlobalRef(env, g_sink_ref);
+    g_sink_ref = NULL;
+  }
 }

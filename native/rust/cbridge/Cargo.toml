@@ -3,13 +3,15 @@ name = "lusicgal-cbridge"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0"
-description = "LusicGal Rust FFI 门面：rfvp / siglus_rs / sena-rs 以 staticlib 接入统一 engine ABI"
+description = "LusicGal Rust FFI 门面（v2）：ABI 契约门禁，复用 lg_common"
 publish = false
 
 [lib]
 name = "lusicgal_cbridge"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# 无外部依赖：保证 `cargo check` 离线可绿（engines.yml: rust-cbridge）。
-# 真实核心（rfvp/siglus/sena）接入时以 path/git 依赖引入 third_party/upstream。
+# lg_common（path 依赖）：ABI 常量 / 输入解析 / 事件 JSON —— 与真核心壳
+# （native/rust/shells/*）共用同一实现（serde/serde_json 轻依赖，离线可绿）。
 [dependencies]
+lg_common = { path = "../lg_common" }
+serde_json = "1"

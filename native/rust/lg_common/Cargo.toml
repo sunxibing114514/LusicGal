@@ -1,0 +1,9 @@
+[package]
+name = "lg_common"
+version = "0.1.0"
+edition = "2021"
+description = "LusicGal 引擎壳共享工具：输入 JSON 解析、Android 上下文缓存、RGBA blit。"
+license = "GPL-3.0-or-later"
+
+[dependencies]
+serde_json = "1"
