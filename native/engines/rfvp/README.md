@@ -21,7 +21,7 @@
 1. `rfvp-staticlib`（crate-type staticlib/cdylib）经 `native/rust/cbridge` 接线，
    导出 `lg_rfvp_engine_*`（engine_abi.h）。
 2. Android：cargo-ndk（arm64-v8a / armeabi-v7a / x86_64）。
-3. iOS：cargo build --target aarch64-apple-ios（上游 README 平台表已含 iOS）。
+3. iOS：**暂不构建**（用户指令；上游平台表含 iOS，未来需要时按上游文档接）。
 
 ## 检测特征
 

@@ -18,9 +18,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-// 上游 Android FFI：仅 Android 链接（iOS 静态库无此符号 —— 壳在 iOS 报
-// "接线进行中" 并优雅退出；上游 platform/ios 入口接入后在此扩展）。
-#[cfg(target_os = "android")]
 unsafe extern "C" {
     fn rfvp_android_init_context(java_vm_ptr: *mut c_void, context_ptr: *mut c_void);
     fn rfvp_android_create(
@@ -89,12 +86,9 @@ pub extern "C" fn lg_rfvp_abi_version() -> u32 {
 #[no_mangle]
 pub unsafe extern "C" fn lg_rfvp_set_android_context(java_vm: *mut c_void, context: *mut c_void) {
     android::set_android_context(java_vm, context);
-    #[cfg(target_os = "android")]
     if android::ready() {
         rfvp_android_init_context(java_vm, context);
     }
-    #[cfg(not(target_os = "android"))]
-    let _ = (java_vm, context);
 }
 
 #[no_mangle]
@@ -171,7 +165,6 @@ pub unsafe extern "C" fn lg_rfvp_engine_start(engine: *mut c_void, cb: LgEventCb
     result::OK
 }
 
-#[cfg(target_os = "android")]
 fn run_loop(engine_addr: usize, cb: LgEventCb) {
     let e = unsafe { &*(engine_addr as *const RfvpEngine) };
     let host = e.host;
@@ -248,20 +241,6 @@ fn run_loop(engine_addr: usize, cb: LgEventCb) {
     e.running.store(false, Ordering::Release);
 }
 
-/// 非 Android 平台（iOS 等）：rfvp 上游 iOS 入口尚未接线 —— 优雅报告并退出，
-/// 保证静态库链接干净（无 rfvp_android_* 未定义符号）。
-#[cfg(not(target_os = "android"))]
-fn run_loop(engine_addr: usize, cb: LgEventCb) {
-    let e = unsafe { &*(engine_addr as *const RfvpEngine) };
-    event::error(
-        Some(cb),
-        e.host,
-        "rfvp：该平台接线进行中（Android 走 rfvp_android_*；iOS 待上游 platform/ios 入口接入）",
-    );
-    event::exit(Some(cb), e.host, 1);
-    e.running.store(false, Ordering::Release);
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn lg_rfvp_engine_set_surface(engine: *mut c_void, surface: *mut c_void) -> i32 {
     let Some(e) = (engine as *mut RfvpEngine).as_mut() else {
@@ -302,18 +281,12 @@ pub unsafe extern "C" fn lg_rfvp_engine_push_input(engine: *mut c_void, json: *c
             let px = x * (e.width.load(Ordering::Acquire) as f64);
             let py = y * (e.height.load(Ordering::Acquire) as f64);
             // rfvp 相位与 LG ABI 完全一致：0/1/2/3。
-            #[cfg(target_os = "android")]
             unsafe { rfvp_android_touch(handle, phase as i32, px, py) };
-            #[cfg(not(target_os = "android"))]
-            let _ = (phase, px, py);
         }
         Some(input::LgInput::Key { name, down }) => {
             let vk = input::vk_code(&name) as i32;
             if vk != 0 {
-                #[cfg(target_os = "android")]
                 unsafe { rfvp_android_key(handle, vk, if down { 0 } else { 1 }) };
-                #[cfg(not(target_os = "android"))]
-                let _ = (vk, down);
             }
         }
         Some(input::LgInput::Text(_)) => { /* rfvp 暂无文本批注入口 */ }
@@ -356,12 +329,9 @@ pub unsafe extern "C" fn lg_rfvp_engine_surface_size(engine: *mut c_void, w: i32
     e.width.store(w as u32, Ordering::Release);
     e.height.store(h as u32, Ordering::Release);
     let handle = *e.handle.lock().unwrap();
-    #[cfg(target_os = "android")]
     if !handle.is_null() {
         unsafe { rfvp_android_resize(handle, w as u32, h as u32) };
     }
-    #[cfg(not(target_os = "android"))]
-    let _ = handle;
     result::OK
 }
 
@@ -376,13 +346,10 @@ pub unsafe extern "C" fn lg_rfvp_engine_destroy(engine: *mut c_void) -> i32 {
         let _ = t.join();
     }
     let handle = *e.handle.lock().unwrap();
-    #[cfg(target_os = "android")]
     if !handle.is_null() {
         unsafe { rfvp_android_destroy(handle) };
         *e.handle.lock().unwrap() = std::ptr::null_mut();
     }
-    #[cfg(not(target_os = "android"))]
-    let _ = handle;
     unsafe { drop(Box::from_raw(e)) };
     result::OK
 }

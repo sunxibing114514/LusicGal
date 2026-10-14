@@ -31,9 +31,4 @@ Pod::Spec.new do |s|
     # 弱符号（核心 stub）依赖 GNU ld 行为；Swift 与 C 混编模块照常工作。
     'OTHER_LDFLAGS' => '$(inherited)',
   }
-
-  # 核心 .a drop-in（不提交产物）：scripts/build_rust_core_ios.sh 产出
-  # build/cores/<id>/ios/liblusicgal_<id>.a；发行构建把它软链/拷贝到
-  # modules/ios-cores/ 后取消下行注释（vendored_libraries 全量并入）：
-  # s.vendored_libraries = 'modules/ios-cores/*.a'
 end

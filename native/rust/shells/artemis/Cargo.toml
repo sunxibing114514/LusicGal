@@ -14,12 +14,7 @@ serde_json = "1"
 
 # 上游核心（scripts/fetch_engines.sh art3m1s-core 拉取到 third_party/upstream）。
 # 用其 C ABI 面（art3m1s_get_api_v1 函数表），不 import 其 Rust item。
-# 后端按目标平台：Android=Vulkan（默认产物路径），iOS=Metal
-#（surface kind 4=CAMetalLayer，见壳内 surface_kind()）。
 [dependencies.art3m1s-core]
 path = "../../../../third_party/upstream/art3m1s-core"
 default-features = false
 features = ["vulkan-backend"]
-
-[target.'cfg(target_os = "ios")'.dependencies]
-art3m1s-core = { path = "../../../../third_party/upstream/art3m1s-core", features = ["metal-backend"] }

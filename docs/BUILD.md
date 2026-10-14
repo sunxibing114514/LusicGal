@@ -7,8 +7,8 @@
 ### `.github/workflows/app.yml`
 
 > 配额说明：私有仓库 Actions 按分钟计费（macOS runner ×10）。默认 push 只跑
-> ubuntu job；iOS 构建为 **workflow_dispatch 手动触发**（已在本仓验证绿：
-> simulator 目标等效编译验证，且不涉签名）。
+> ubuntu job。**iOS 暂不构建**（用户指令）：引擎核心验证只做 Android arm64；
+> iOS 侧源码（桥/插件/stub）保持就位但不构建、不进 CI。
 
 | Job | Runner | 步骤 | 产物 |
 |---|---|---|---|
