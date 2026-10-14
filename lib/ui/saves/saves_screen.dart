@@ -152,8 +152,8 @@ class _GameSavesScreenState extends State<_GameSavesScreen> {
   }
 
   Future<void> _import() async {
-    // file_picker 13.x：列表直接返回（空=取消）。
-    final picked = await FilePicker.platform.pickFiles(
+    // file_picker 13.x：静态方法，列表直接返回（空=取消）。
+    final picked = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['zip'],
     );

@@ -64,7 +64,7 @@ jobs:
           if-no-files-found: error
 
   build-ios:
-    name: ios (debug, no codesign)
+    name: ios (debug, simulator)
     runs-on: macos-latest
     timeout-minutes: 60
     steps:
@@ -81,5 +81,7 @@ jobs:
         run: python3 scripts/patch_platform.py
       - name: pub get
         run: flutter pub get
-      - name: build ios (no codesign)
-        run: flutter build ios --debug --no-codesign
+      - name: build ios (simulator, no codesign)
+        # 13.x 文件选择器的 darwin 端走 Swift Package Manager/原生资产，
+        # device 目标会触发签名检查；simulator 构建不涉及签名，编译验证等效。
+        run: flutter build ios --debug --simulator

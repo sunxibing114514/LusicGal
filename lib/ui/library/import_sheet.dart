@@ -177,8 +177,8 @@ class _ImportSheetState extends State<ImportSheet> {
   }
 
   Future<void> _pickFiles() async {
-    // file_picker 13.x：pickFiles 恒返回列表（空列表=取消），默认即多选。
-    final picked = await FilePicker.platform.pickFiles();
+    // file_picker 13.x：静态方法、恒返回列表（空=取消），默认即多选。
+    final picked = await FilePicker.pickFiles();
     final paths = picked.map((f) => f.path).whereType<String>().toList();
     if (paths.isEmpty) return;
     setState(() => _busy = true);
