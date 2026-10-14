@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LusicGal Ren'Py 外板壳模块清单（随宿主 App 合并）。
+     Activity 由 plugins/.../RenpyLauncher.kt 以显式 Intent 启动
+     （setClassName "com.lusicgal.renpy/.RenpyGameActivity"）。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-feature android:glEsVersion="0x00030000" android:required="true"/>
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
+
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <uses-permission android:name="android.permission.VIBRATE"/>
+
+    <application>
+        <activity
+            android:name="com.lusicgal.renpy.RenpyGameActivity"
+            android:label="Ren'Py"
+            android:exported="false"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleTask"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:theme="@android:style/Theme.NoTitleBar.Fullscreen"/>
+    </application>
+</manifest>

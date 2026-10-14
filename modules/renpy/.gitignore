@@ -1,0 +1,4 @@
+# modules/renpy 构建产物（staging 输出 + gradle 构建缓存）
+build-out/
+build/
+.gradle/

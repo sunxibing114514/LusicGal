@@ -4,6 +4,8 @@
 - iOS Runner/Info.plist：CFBundleDisplayName=LusicGal、UIFileSharingEnabled、
   LSSupportsOpeningDocumentsInPlace（"文件"App 可直接投放游戏/取走导出）。
 - Android AndroidManifest.xml：application.largeHeap=true（引擎核心吃内存）。
+- Ren'Py 外板壳模块：modules/renpy/build-out/.ready 存在时把 ':module-renpy'
+  并入 settings.gradle + 依赖进 app —— 未 staging 的普通构建零影响。
 
 平台壳是 CI 确定性生成的（docs/ARCHITECTURE.md §6），因此所有定制都集中在本脚本。
 """
@@ -70,8 +72,76 @@ def patch_android_gradle(root: str) -> None:
     print('patch_platform: Gradle 未发现 flutter.compileSdkVersion（可能模板已变更）')
 
 
+def patch_renpy_module(root: str) -> None:
+    """Ren'Py 外板壳模块（modules/renpy，Route B）：
+
+    build-out/.ready（modules/renpy/build_android.sh staging 完成）存在时：
+      1. settings.gradle include ':module-renpy'（projectDir=modules/renpy）；
+      2. app 依赖 implementation project(':module-renpy')。
+    未 staging：零改动（普通构建不受重依赖影响）。
+    """
+    ready = os.path.join(root, 'modules', 'renpy', 'build-out', '.ready')
+    if not os.path.exists(ready):
+        print('patch_platform: renpy 模块未 staging（跳过）')
+        return
+    settings = None
+    for name in ('settings.gradle.kts', 'settings.gradle'):
+        p = os.path.join(root, 'android', name)
+        if os.path.exists(p):
+            settings = p
+            break
+    if settings is None:
+        print('patch_platform: 未找到 settings.gradle（renpy 模块跳过）')
+        return
+    with open(settings, encoding='utf-8') as f:
+        src = f.read()
+    is_kts = settings.endswith('.kts')
+    marker = ("include(\":module-renpy\")" if is_kts
+              else "include ':module-renpy'")
+    if marker not in src:
+        if is_kts:
+            block = (
+                "\n// LusicGal: Ren'Py 外板壳模块（modules/renpy，已 staging）\n"
+                f"{marker}\n"
+                "project(\":module-renpy\").projectDir ="
+                " File(rootProject.projectDir, \"../modules/renpy\")\n"
+            )
+        else:
+            block = (
+                "\n// LusicGal: Ren'Py 外板壳模块（modules/renpy，已 staging）\n"
+                f"{marker}\n"
+                "project(':module-renpy').projectDir ="
+                " new File(rootProject.projectDir, '../modules/renpy')\n"
+            )
+        with open(settings, 'a', encoding='utf-8') as f:
+            f.write(block)
+        print('patch_platform: settings 已 include :module-renpy')
+
+    app_dir = os.path.join(root, 'android', 'app')
+    for name in ('build.gradle.kts', 'build.gradle'):
+        p = os.path.join(app_dir, name)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        dep_groovy = "implementation project(':module-renpy')"
+        dep_kts = "implementation(project(\":module-renpy\"))"
+        if dep_groovy in src or dep_kts in src:
+            break
+        if name.endswith('.kts'):
+            patched = src.replace('dependencies {', f'dependencies {{\n    {dep_kts}', 1)
+        else:
+            patched = src.replace('dependencies {', f'dependencies {{\n    {dep_groovy}', 1)
+        if patched != src:
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write(patched)
+            print(f'patch_platform: {name} 已依赖 :module-renpy')
+        break
+
+
 if __name__ == '__main__':
     project_root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     patch_ios(project_root)
     patch_android(project_root)
     patch_android_gradle(project_root)
+    patch_renpy_module(project_root)

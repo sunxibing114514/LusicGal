@@ -111,10 +111,18 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 - 2012 年的第三方 Ren'Py iOS 打包器（LGPL-2.1，已停更），证明 iOS 需要 Python 解释器静态嵌入 —— 与 renpy-build 内置 renios 一致。
 - **采纳**：仅作历史参考与许可（LGPL-2.1 组件兼容性）记录；实际构建用官方 renpy-build。
 
-**Ren'Py 集成结论**（对应"待解决问题：Ren'Py 的 iOS 构建需要 Xcode + Python 环境整合"）：
-1. 官方链路：Ubuntu 24.04 容器内 `renpy-build` 产出 `renios` 的 iOS 静态库（内嵌 Python）→ Xcode 链接。
-2. LusicGal 的接入点：Ren'Py 核心作为**独立可选核心模块**（体积大，含 Python），通过 `engine_abi.h` 包装 `renpy.main` 启动（C 入口 `renpy.h: renpy_main`）。
-3. v1 不打包，检测/库管理先就绪 —— ROADMAP 中列出完整流水线。
+**Ren'Py 集成结论**（Route B 外板壳，v2 已实装 → `modules/renpy/`）：
+1. 官方链路：renpy-build `./build.sh --platform android --arch arm64_v8a --stop renpython`
+   → `librenpython.so`（SDL3 3.4.8 + Python 3.12 + ffmpeg 全静态）。
+2. **不经 ABI 桥**：rapt 的 Java 生命周期（PythonSDLActivity → SDLActivity）原样
+   复用；LusicGal 模块 `RenpyGameActivity extends PythonSDLActivity` 只做 argv 注入：
+   `getArguments() = [gamePath, "--savedir", savePath]`（renpy/bootstrap.py 位置参数
+   basedir + renpy/arguments.py --savedir；loader.find_apks 在 basedir≠renpy_base 时
+   跳过 APK 内游戏数据 → 文件系统游戏目录）。
+3. 运行时资产复刻 rapt 语义：`private.mp3` tar（main.py + renpy/ Python 树）首跑解包
+   到 ANDROID_PRIVATE；`assets/x-renpy/x-common/**`（renpy/common 逐段 x- 前缀）。
+4. App 并入：`modules/renpy/build_android.sh` staging → `.ready` →
+   `scripts/patch_platform.py` 自动 include `:module-renpy`（未 staging 零影响）。
 
 ## 4. Rust 三引擎（xmoezzz 系）
 

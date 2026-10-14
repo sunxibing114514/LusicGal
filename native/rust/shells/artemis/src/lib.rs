@@ -18,6 +18,15 @@ use std::time::{Duration, Instant};
 pub const ART3M1S_API_ABI_VERSION: u32 = 1;
 pub const ART3M1S_API_ABI_MAGIC: u64 = 0x415254334D314150; // "ART3M1AP"
 
+/// 宿主表面 kind（art3m1s NativeSurfaceKind::from_legacy_int）：
+/// 1=ANativeWindow（Android）/ 4=CAMetalLayer（iOS）。
+#[cfg(target_os = "android")]
+fn surface_kind() -> i32 { 1 }
+#[cfg(target_os = "ios")]
+fn surface_kind() -> i32 { 4 }
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn surface_kind() -> i32 { 1 }
+
 type HostEventsCreateFn = unsafe extern "C" fn() -> *mut c_void;
 type HostEventsDestroyFn = unsafe extern "C" fn(*mut c_void);
 type HostEventsEnableFn = unsafe extern "C" fn(*mut c_void, i32);
@@ -357,7 +366,10 @@ fn run_loop(engine_addr: usize, cb: LgEventCb) {
         }
     };
     if let Some(set_surf) = api.runtime_set_external_surface {
-        unsafe { set_surf(rt, 1 /* ANativeWindow */, win, w, h) };
+        // kind：1=ANativeWindow（Android）/ 4=CAMetalLayer（iOS）
+        // （art3m1s-render src/types.rs NativeSurfaceKind::from_legacy_int）。
+        let kind = surface_kind();
+        unsafe { set_surf(rt, kind, win, w, h) };
     }
     // 载入工程（system.ini 由 core 从挂载资源里解析）。
     if let Some(load) = api.runtime_load_project {
@@ -384,7 +396,8 @@ fn run_loop(engine_addr: usize, cb: LgEventCb) {
         if gen_now != applied_gen {
             if let Some((win2, w2, h2)) = *e.surface.lock().unwrap() {
                 if let Some(set_surf) = api.runtime_set_external_surface {
-                    unsafe { set_surf(rt, 1, win2, w2, h2) };
+                    let kind = surface_kind();
+                    unsafe { set_surf(rt, kind, win2, w2, h2) };
                 }
             }
             applied_gen = gen_now;

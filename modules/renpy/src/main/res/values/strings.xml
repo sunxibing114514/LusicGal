@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- PythonSDLActivity.unpackData("private") 的版本比对源：
+         bump 此值触发 librenpython 运行时资产重新解包。 -->
+    <string name="private_version">lg-1</string>
+</resources>

@@ -23,7 +23,7 @@
 |---|---|---|
 | `gates` | C ABI selftest v2（0x00020000）/ JNI 桥 ×NDK（dlsym 版）/ Rust FFI 门禁（`native/rust/cbridge`，复用 `lg_common`）/ 19 个上游 pin 校验 | **必须绿** |
 | `rust-cores`（matrix: sena/rfvp/siglus/artemis） | `scripts/build_rust_core.sh` 交叉编译 `liblusicgal_<id>.so`（arm64-v8a）→ artifact `lusicgal-core-<id>-arm64` | **push 即跑**（rust-cache 缓存重依赖） |
-| `onscripter-android` / `xsystem35-android` / `kirikiri-android`（手动） | C/C++ 核心交叉编译尝试 | `continue-on-error`（非阻塞，逐个转正） |
+| `onscripter-android` / `xsystem35-android` / `kirikiri-android` / `renpy-module`（手动） | C/C++ 核心交叉编译与 Ren'Py 外板壳 staging 尝试 | `continue-on-error`（非阻塞，逐个转正） |
 
 ## 本地（可选，CI 均已覆盖）
 
@@ -57,8 +57,13 @@ bash native/engines/kirikiri/build_android.sh      # C++ 核心（vcpkg + patch_
 
 核心产物在 `build/cores/<id>/arm64-v8a/`；作为 `jniLibs` 放入任意 APK 即被
 `EngineHost.probe` 识别（见 docs/ARCHITECTURE.md §核心分发）。renpy 例外 ——
-Route B 外板壳模块（`com.lusicgal.renpy`，Activity 承载 `librenpython.so`），
-不经 ABI 桥，见 docs/ENGINE_NOTES.md。
+Route B 外板壳模块 `modules/renpy/`（`RenpyGameActivity` 承载官方 `librenpython.so`，
+不经 ABI 桥）：
+
+```bash
+bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + 运行时资产
+# staging 后任意 App 构建自动并入 :module-renpy（scripts/patch_platform.py 检测 .ready）
+```
 
 各引擎的具体链路（vcpkg triplet / SDL 取窗补丁 / cargo 交叉…）见各
 `native/engines/<id>/README.md` 与 `docs/ENGINE_NOTES.md`。

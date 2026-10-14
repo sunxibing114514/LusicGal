@@ -64,6 +64,14 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
     if (result.ok) {
+      // Ren'Py Route B：游戏在外板壳 Activity 全屏运行，本页自动让位
+      //（外板退出即回到书库）。
+      if (widget.game.engine.id == 'renpy') {
+        Future<void>.delayed(const Duration(milliseconds: 400), () {
+          if (mounted) Navigator.of(context).maybePop();
+        });
+        return;
+      }
       _subscription = _host.events(gameId: widget.game.id).listen((event) {
         if (!mounted) return;
         if (event.type == 'exit') {

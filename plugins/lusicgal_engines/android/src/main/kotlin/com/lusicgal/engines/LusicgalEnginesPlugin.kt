@@ -296,6 +296,20 @@ object EngineHost {
     fun probeAll(): List<Map<String, Any?>> = engineIds.map { probe(it) }
 
     fun probe(engineId: String): Map<String, Any?> {
+        // Ren'Py Route B：可用性 = 外板壳模块类并入构建（非 loadLibrary）。
+        if (engineId == "renpy") {
+            return try {
+                Class.forName("com.lusicgal.renpy.RenpyGameActivity")
+                mapOf(
+                    "engineId" to engineId,
+                    "available" to true,
+                    "version" to "route-b",
+                    "message" to null
+                )
+            } catch (_: ClassNotFoundException) {
+                unavailable(engineId, "Ren'Py 外板壳模块未并入构建（modules/renpy/build_android.sh staging）")
+            }
+        }
         if (!ensureBridge()) {
             return unavailable(engineId, "桥库 liblusicgal_bridge.so 未打包（该 ABI 未构建）")
         }

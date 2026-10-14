@@ -27,6 +27,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
+// 便携 FFI（全平台链接）：目录探测 + CPU 帧缓冲路径（avg32/reallive/uk2）。
 unsafe extern "C" {
     fn game_probe_json(
         root: *const c_char,
@@ -52,7 +53,12 @@ unsafe extern "C" {
     fn game_fb_key(game: *mut c_void, code: u32, pressed: i32);
     fn game_fb_text(game: *mut c_void, text: *const c_char);
     fn game_fb_close(game: *mut c_void);
+}
 
+// Android wgpu 路径 FFI（仅 Android 链接；iOS 静态库无此符号 ——
+// iOS 上 "siglus" 子引擎回退 fb 路径或报接线进行中）。
+#[cfg(target_os = "android")]
+unsafe extern "C" {
     fn siglus_android_init_context(java_vm_ptr: *mut c_void, context_ptr: *mut c_void);
     fn siglus_android_create(
         native_window_ptr: *mut c_void,
@@ -127,9 +133,12 @@ pub extern "C" fn lg_siglus_abi_version() -> u32 {
 #[no_mangle]
 pub unsafe extern "C" fn lg_siglus_set_android_context(java_vm: *mut c_void, context: *mut c_void) {
     android::set_android_context(java_vm, context);
+    #[cfg(target_os = "android")]
     if android::ready() {
         siglus_android_init_context(java_vm, context);
     }
+    #[cfg(not(target_os = "android"))]
+    let _ = (java_vm, context);
 }
 
 #[no_mangle]
@@ -242,68 +251,98 @@ pub unsafe extern "C" fn lg_siglus_engine_start(engine: *mut c_void, cb: LgEvent
 }
 
 fn run_loop(engine_addr: usize, cb: LgEventCb, path: Path) {
+    match path {
+        Path::Android => run_loop_android(engine_addr, cb),
+        Path::Fb => run_loop_fb(engine_addr, cb),
+    }
+}
+
+/// siglus 子引擎：wgpu 直渲（仅 Android —— iOS 静态库无 siglus_android_*）。
+#[cfg(target_os = "android")]
+fn run_loop_android(engine_addr: usize, cb: LgEventCb) {
     let e = unsafe { &*(engine_addr as *const SiglusEngine) };
     let host = e.host;
     let frame_budget = Duration::from_millis(16);
     let mut last = Instant::now();
-    match path {
-        Path::Android => {
-            // siglus：wgpu 直渲 —— 等宿主表面（10s 超时）。
-            let (win, w, h) = {
-                let guard = e.surface.lock().unwrap();
-                let (g, _t) = e
-                    .surface_cv
-                    .wait_timeout_while(guard, Duration::from_secs(10), |s| s.is_none())
-                    .unwrap();
-                match *g {
-                    Some(v) => v,
-                    None => {
-                        event::error(Some(cb), host, "等待渲染表面超时（siglus 需注入 ANativeWindow）");
-                        event::exit(Some(cb), host, 1);
-                        e.running.store(false, Ordering::Release);
-                        return;
-                    }
+    {
+        // siglus：wgpu 直渲 —— 等宿主表面（10s 超时）。
+        let (win, w, h) = {
+            let guard = e.surface.lock().unwrap();
+            let (g, _t) = e
+                .surface_cv
+                .wait_timeout_while(guard, Duration::from_secs(10), |s| s.is_none())
+                .unwrap();
+            match *g {
+                Some(v) => v,
+                None => {
+                    event::error(Some(cb), host, "等待渲染表面超时（siglus 需注入 ANativeWindow）");
+                    event::exit(Some(cb), host, 1);
+                    e.running.store(false, Ordering::Release);
+                    return;
                 }
-            };
-            let handle = unsafe {
-                siglus_android_create(win, w, h, e.scale, e.game_root.as_ptr())
-            };
-            if handle.is_null() {
-                event::error(Some(cb), host, "siglus_android_create 失败");
-                event::exit(Some(cb), host, 1);
-                e.running.store(false, Ordering::Release);
-                return;
             }
-            *e.handle.lock().unwrap() = handle;
-            event::state(Some(cb), host, "running");
-            let mut applied_gen = e.surface_gen.load(Ordering::Acquire);
-            while e.running.load(Ordering::Acquire) {
-                if e.paused.load(Ordering::Acquire) {
-                    std::thread::sleep(Duration::from_millis(40));
-                    continue;
+        };
+        let handle = unsafe {
+            siglus_android_create(win, w, h, e.scale, e.game_root.as_ptr())
+        };
+        if handle.is_null() {
+            event::error(Some(cb), host, "siglus_android_create 失败");
+            event::exit(Some(cb), host, 1);
+            e.running.store(false, Ordering::Release);
+            return;
+        }
+        *e.handle.lock().unwrap() = handle;
+        event::state(Some(cb), host, "running");
+        let mut applied_gen = e.surface_gen.load(Ordering::Acquire);
+        while e.running.load(Ordering::Acquire) {
+            if e.paused.load(Ordering::Acquire) {
+                std::thread::sleep(Duration::from_millis(40));
+                continue;
+            }
+            let gen_now = e.surface_gen.load(Ordering::Acquire);
+            if gen_now != applied_gen {
+                if let Some((win2, w2, h2)) = *e.surface.lock().unwrap() {
+                    unsafe { siglus_android_set_surface(handle, win2, w2, h2) };
                 }
-                let gen_now = e.surface_gen.load(Ordering::Acquire);
-                if gen_now != applied_gen {
-                    if let Some((win2, w2, h2)) = *e.surface.lock().unwrap() {
-                        unsafe { siglus_android_set_surface(handle, win2, w2, h2) };
-                    }
-                    applied_gen = gen_now;
-                }
-                let dt = last.elapsed().as_millis().min(u32::MAX as u128) as u32;
-                last = Instant::now();
-                let rc = unsafe { siglus_android_step(handle, dt) };
-                if rc != 0 {
-                    event::exit(Some(cb), host, rc);
-                    break;
-                }
-                let spent = last.elapsed();
-                if spent < frame_budget {
-                    std::thread::sleep(frame_budget - spent);
-                }
+                applied_gen = gen_now;
+            }
+            let dt = last.elapsed().as_millis().min(u32::MAX as u128) as u32;
+            last = Instant::now();
+            let rc = unsafe { siglus_android_step(handle, dt) };
+            if rc != 0 {
+                event::exit(Some(cb), host, rc);
+                break;
+            }
+            let spent = last.elapsed();
+            if spent < frame_budget {
+                std::thread::sleep(frame_budget - spent);
             }
         }
-        Path::Fb => {
-            // avg32 / reallive / uk2：CPU 帧缓冲。
+    }
+    e.running.store(false, Ordering::Release);
+}
+
+/// 非 Android 的 siglus 子引擎：接线进行中（fb 子引擎不受影响）。
+#[cfg(not(target_os = "android"))]
+fn run_loop_android(engine_addr: usize, cb: LgEventCb) {
+    let e = unsafe { &*(engine_addr as *const SiglusEngine) };
+    event::error(
+        Some(cb),
+        e.host,
+        "siglus 子引擎的 wgpu 路径仅 Android；该平台接线进行中（fb 子引擎不受影响）",
+    );
+    event::exit(Some(cb), e.host, 1);
+    e.running.store(false, Ordering::Release);
+}
+
+/// avg32 / reallive / uk2：CPU 帧缓冲（全平台；呈现面 blit 仅 Android）。
+fn run_loop_fb(engine_addr: usize, cb: LgEventCb) {
+    let e = unsafe { &*(engine_addr as *const SiglusEngine) };
+    let host = e.host;
+    let frame_budget = Duration::from_millis(16);
+    let mut last = Instant::now();
+    {
+        {
             let mut err: *mut c_char = std::ptr::null_mut();
             let handle = unsafe {
                 game_fb_open(
@@ -406,10 +445,13 @@ pub unsafe extern "C" fn lg_siglus_engine_push_input(engine: *mut c_void, json: 
             let px = x * (e.width.load(Ordering::Acquire) as f64);
             let py = y * (e.height.load(Ordering::Acquire) as f64);
             match path {
+                // siglus_android_touch 相位同 LG ABI（0/1/2/3）。
+                #[cfg(target_os = "android")]
                 Some(Path::Android) => unsafe {
-                    // siglus_android_touch 相位同 LG ABI（0/1/2/3）。
                     siglus_android_touch(handle, phase as i32, px, py)
                 },
+                #[cfg(not(target_os = "android"))]
+                Some(Path::Android) => {}
                 _ => unsafe {
                     game_fb_pointer_move(handle, px as i32, py as i32);
                     match phase {
@@ -421,6 +463,7 @@ pub unsafe extern "C" fn lg_siglus_engine_push_input(engine: *mut c_void, json: 
             }
         }
         Some(input::LgInput::Key { name, down }) => match path {
+            #[cfg(target_os = "android")]
             Some(Path::Android) => {
                 let code = input::akeycode(&name);
                 if code != 0 {
@@ -433,6 +476,8 @@ pub unsafe extern "C" fn lg_siglus_engine_push_input(engine: *mut c_void, json: 
                     }
                 }
             }
+            #[cfg(not(target_os = "android"))]
+            Some(Path::Android) => {}
             _ => {
                 let code = input::vk_code(&name);
                 if code != 0 {
@@ -488,6 +533,7 @@ pub unsafe extern "C" fn lg_siglus_engine_surface_size(engine: *mut c_void, w: i
     let handle = *e.handle.lock().unwrap();
     if !handle.is_null() {
         match *e.path.lock().unwrap() {
+            #[cfg(target_os = "android")]
             Some(Path::Android) => unsafe { siglus_android_resize(handle, w as u32, h as u32) },
             _ => { /* fb 路径：帧缓冲尺寸由核心自管 */ }
         }
@@ -508,6 +554,7 @@ pub unsafe extern "C" fn lg_siglus_engine_destroy(engine: *mut c_void) -> i32 {
     let handle = *e.handle.lock().unwrap();
     if !handle.is_null() {
         match *e.path.lock().unwrap() {
+            #[cfg(target_os = "android")]
             Some(Path::Android) => unsafe { siglus_android_destroy(handle) },
             _ => unsafe { game_fb_close(handle) },
         }

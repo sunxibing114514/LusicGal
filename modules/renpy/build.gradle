@@ -1,0 +1,61 @@
+// LusicGal Ren'Py 外板壳模块（Route B）。
+//
+// 本模块由 modules/renpy/build_android.sh "staging" 后才参与 App 构建：
+//  scripts/patch_platform.py 检测 build-out/.ready 时才把 ':module-renpy'
+//  include 进生成的 android/settings.gradle（未 staging 的普通构建不受影响）。
+//
+// staging 产物（build-out/，全部 .gitignore）：
+//   java/rapt/**        ← rapt/prototype/renpyandroid 的真实 Java（含 PythonSDLActivity）
+//   java/sdl/**         ← SDL3-<ver>/android-project/app/src/main/java
+//   jniLibs/arm64-v8a/librenpython.so ← renpy-build --stop renpython 产物
+//   assets/private.mp3  ← tar{ main.py + renpy/ Python 树（无 common）}
+//   assets/x-renpy/x-common/** ← renpy/common/**（逐段 x- 前缀）
+plugins {
+    id 'com.android.library'
+}
+
+android {
+    namespace = "com.lusicgal.renpy"
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 23
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs = [
+                'src/main/java',
+                'build-out/java/rapt',
+                'build-out/java/sdl',
+            ]
+            jniLibs.srcDirs = ['build-out/jniLibs']
+            assets.srcDirs = ['src/main/assets', 'build-out/assets']
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
+    lint {
+        abortOnError = false
+    }
+}
+
+dependencies {
+    // 与 rapt/prototype/renpyandroid/build.gradle 的依赖面一致。
+    api "com.google.android.play:asset-delivery:2.3.0"
+    implementation 'com.google.android.play:age-signals:0.0.3'
+    implementation "androidx.activity:activity:1.11.0"
+    implementation "org.slf4j:slf4j-api:2.0.17-0"
+    implementation "uk.uuid.slf4j:slf4j-android:2.0.17-0"
+}
