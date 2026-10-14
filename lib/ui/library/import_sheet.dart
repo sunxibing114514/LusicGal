@@ -177,8 +177,9 @@ class _ImportSheetState extends State<ImportSheet> {
   }
 
   Future<void> _pickFiles() async {
-    final result = await FilePicker.platform.pickFiles(allowMultiple: true);
-    final paths = result?.paths.whereType<String>().toList() ?? const <String>[];
+    // file_picker 13.x：pickFiles 恒返回列表（空列表=取消），默认即多选。
+    final picked = await FilePicker.platform.pickFiles();
+    final paths = picked.map((f) => f.path).whereType<String>().toList();
     if (paths.isEmpty) return;
     setState(() => _busy = true);
     final title = p.basenameWithoutExtension(paths.first);

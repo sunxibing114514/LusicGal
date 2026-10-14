@@ -13,7 +13,7 @@ apply plugin: 'kotlin-android'
 
 android {
     namespace = "com.lusicgal.engines"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 21
