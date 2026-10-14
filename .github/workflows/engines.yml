@@ -3,29 +3,25 @@ name: engines
 on:
   push:
     branches: [main]
+    paths-ignore: ['**.md', 'docs/**']
   pull_request:
+    paths-ignore: ['**.md', 'docs/**']
   workflow_dispatch:
 
+# 配额说明：四个必绿门禁合并为一个 ubuntu job（省去重复 setup）；
+# 实验性核心编译仅在 workflow_dispatch 手动触发时运行（上游体积大、耗时长）。
 jobs:
-  c-abi-host:
-    name: C ABI selftest (host gcc) — 必须绿
+  gates:
+    name: 必绿门禁（C ABI / JNI / Rust FFI / 上游 pin）
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
-      - name: configure
-        run: cmake -S native/selftest -B build-selftest
-      - name: build
-        run: cmake --build build-selftest
-      - name: run selftest
-        run: ./build-selftest/lusicgal_selftest
-
-  jni-bridge-android:
-    name: JNI bridge ×NDK arm64-v8a — 必须绿
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
+      - name: C ABI selftest (host gcc)
+        run: |
+          cmake -S native/selftest -B build-selftest
+          cmake --build build-selftest
+          ./build-selftest/lusicgal_selftest
       - name: locate NDK
         run: |
           NDK="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)"
@@ -34,44 +30,31 @@ jobs:
           fi
           echo "NDK_HOME=$NDK" >> "$GITHUB_ENV"
           echo "使用 NDK: $NDK"
-      - name: configure + build bridge (static lib)
+      - name: JNI bridge ×NDK arm64-v8a
         run: |
           cmake -S native/bridge -B build-bridge \
             -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
             -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
             -DCMAKE_BUILD_TYPE=Release
           cmake --build build-bridge
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust FFI gate (cargo check + test)
+        run: |
+          cargo check --manifest-path native/rust/cbridge/Cargo.toml
+          cargo test --manifest-path native/rust/cbridge/Cargo.toml
+      - name: 18 个上游 pin 校验
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/fetch_engines.sh --verify
       - uses: actions/upload-artifact@v4
         with:
           name: lusicgal-bridge-arm64
           path: build-bridge/liblusicgal_bridge.a
           if-no-files-found: error
 
-  rust-cbridge:
-    name: Rust FFI gate (cargo check) — 必须绿
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - name: cargo check
-        run: cargo check --manifest-path native/rust/cbridge/Cargo.toml
-      - name: cargo test
-        run: cargo test --manifest-path native/rust/cbridge/Cargo.toml
-
-  fetch-upstreams:
-    name: 18 个上游 pin 校验 — 必须绿
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: verify pins via GitHub API
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: bash scripts/fetch_engines.sh --verify
-
   onscripter-android:
-    name: 实验：OnscripterYuri ×NDK（非阻塞）
+    name: 实验：OnscripterYuri ×NDK（手动，非阻塞）
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     continue-on-error: true
@@ -83,7 +66,8 @@ jobs:
         run: bash native/engines/onscripter/build_android.sh
 
   sena-android:
-    name: 实验：sena-rs ×Android target（非阻塞）
+    name: 实验：sena-rs ×Android target（手动，非阻塞）
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     continue-on-error: true
