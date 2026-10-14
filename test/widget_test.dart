@@ -20,6 +20,8 @@ import 'package:provider/provider.dart';
 /// EngineHost 吞掉并返回空表，这正是"核心未打包"的真实路径。
 void main() {
   testWidgets('书库空状态 + 四页导航 + 明暗主题切换', (tester) async {
+    void mark(String m) => print('LG-MARK $m'); // ignore: avoid_print
+    mark('start');
     const channel = MethodChannel('lusicgal/engines');
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
       channel,
@@ -28,14 +30,18 @@ void main() {
     addTearDown(() {
       tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
     });
+    mark('mock installed');
 
     final dir = await Directory.systemTemp.createTemp('lg_app');
+    mark('createTemp done');
     addTearDown(() => dir.delete(recursive: true));
 
     final store = LibraryStore(root: dir);
     await store.load();
+    mark('store.load done');
     final settings = SettingsController(file: File(p.join(dir.path, 'settings.json')));
     await settings.load();
+    mark('settings.load done');
 
     Future<void> pump() => tester.pumpWidget(
           MultiProvider(
@@ -55,9 +61,11 @@ void main() {
     // 有界 pump（不依赖 settle）+ 显式超时：任何回归最多 2 分钟内失败，
     // 绝不让 CI 挂 10 分钟。
     await pump();
+    mark('pumpWidget done');
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 120));
     }
+    mark('settle pumps done');
 
     // 空书库引导。
     expect(find.text('书库还是空的'), findsOneWidget);
@@ -65,19 +73,24 @@ void main() {
     expect(find.text('存档'), findsWidgets);
     expect(find.text('引擎'), findsWidgets);
     expect(find.text('设置'), findsWidgets);
+    mark('first expects done');
 
     // 切换深色主题：MaterialApp 重建且不崩溃（设置 → 主题联动）。
     await settings.setThemeMode(ThemeModeSetting.dark);
+    mark('setThemeMode dark done');
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(milliseconds: 120));
     }
     expect(find.text('书库还是空的'), findsOneWidget);
+    mark('dark expects done');
 
     // 切换浅色主题。
     await settings.setThemeMode(ThemeModeSetting.light);
+    mark('setThemeMode light done');
     for (var i = 0; i < 3; i++) {
       await tester.pump(const Duration(milliseconds: 120));
     }
     expect(find.text('书库还是空的'), findsOneWidget);
+    mark('BODY DONE');
   }, timeout: const Timeout(Duration(minutes: 2)));
 }
