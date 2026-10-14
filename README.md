@@ -57,8 +57,8 @@
 
 | Workflow | 内容 |
 |---|---|
-| `app` | `flutter analyze` + `flutter test` + `flutter build apk --release`（Ubuntu）+ `flutter build ios --debug --no-codesign`（macOS） |
-| `engines` | C ABI 宿主自检 · JNI 桥 NDK 交叉编译 · Rust cbridge `cargo check` · 上游 pin 校验 · 引擎核心交叉编译实验（非阻塞） |
+| `app` | 单 ubuntu job：`analyze` + `test` + `build apk --release`；iOS 为手动触发（macOS ×10 计费，已验证绿） |
+| `engines` | 单 ubuntu job 合并四门禁：C ABI 自检 · JNI 桥 NDK 交叉编译 · Rust cbridge · 18 上游 pin 校验；核心实验手动触发（非阻塞） |
 
 ## 目录结构
 

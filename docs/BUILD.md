@@ -6,21 +6,26 @@
 
 ### `.github/workflows/app.yml`
 
+> 配额说明：私有仓库 Actions 按分钟计费（macOS runner ×10）。默认 push 只跑
+> ubuntu job；iOS 构建为 **workflow_dispatch 手动触发**（已在本仓验证绿：
+> simulator 目标等效编译验证，且不涉签名）。
+
 | Job | Runner | 步骤 | 产物 |
 |---|---|---|---|
-| `analyze-test` | ubuntu-latest | `flutter pub get` → `flutter analyze` → `flutter test` | — |
-| `build-android` | ubuntu-latest | `flutter create --platforms=android` → 补丁 → `flutter build apk --release` | `app-release.apk`（artifact） |
-| `build-ios` | macos-latest | `flutter create --platforms=ios` → 补丁 → `flutter build ios --debug --no-codesign` | 构建通过 |
+| `verify` | ubuntu-latest | `pub get` → `analyze` → `test` → `flutter create --platforms=android` → 补丁 → `flutter build apk --release` | `app-release.apk`（artifact） |
+| `build-ios`（手动） | macos-latest | `flutter create --platforms=ios` → 补丁 → `flutter build ios --debug --simulator` | 构建通过 |
 
 ### `.github/workflows/engines.yml`
 
-| Job | 内容 | 性质 |
+四个必绿门禁合并为单一 ubuntu job `gates`（省去重复 setup 与分钟开销）：
+
+| Step（job `gates`） | 内容 | 性质 |
 |---|---|---|
-| `c-abi-host` | gcc 编译 `native/`（ABI 头 + stub + selftest）并运行自检 | **必须绿** |
-| `jni-bridge-android` | NDK（arm64-v8a）交叉编译 JNI 桥 | **必须绿** |
-| `rust-cbridge` | `cargo check` `native/rust/cbridge`（Rust FFI 门面） | **必须绿** |
-| `fetch-upstreams` | `scripts/fetch_engines.sh`（校验 18 个 pin 全部可解析） | **必须绿** |
-| `engine-cross-experimental` | 引擎核心真实交叉编译尝试（Yuri/xsystem35/sena…） | `continue-on-error`（非阻塞，逐个转正） |
+| C ABI selftest | gcc 编译 `native/`（ABI 头 + stub + selftest）并运行自检 | **必须绿** |
+| JNI bridge ×NDK | NDK（arm64-v8a）交叉编译 JNI 桥 | **必须绿** |
+| Rust FFI gate | `cargo check`/`test` `native/rust/cbridge` | **必须绿** |
+| 上游 pin 校验 | `scripts/fetch_engines.sh --verify`（18 个 pin 全部可解析） | **必须绿** |
+| `onscripter-android` / `sena-android`（手动） | 引擎核心真实交叉编译尝试 | `continue-on-error`（非阻塞，逐个转正） |
 
 ## 本地（可选，CI 均已覆盖）
 
@@ -44,6 +49,13 @@ bash native/engines/onscripter/build_android.sh   # 例：Yuri NDK 交叉编译
 ```
 
 各引擎的具体链路（vcpkg triplet / SDL iOS 参数 / cargo-ndk…）见各 `native/engines/<id>/README.md` 与 `docs/ENGINE_NOTES.md`。
+
+## widget 测试契约（避免死锁）
+
+- `testWidgets` body 运行于 fake-async zone：`scheduleMicrotask` 被拦截。**一切真实 IO（文件读写、临时目录）必须包进 `tester.runAsync`**，否则 IO 完成回调停在 fake 队列，body 永久挂起（超时堆栈为 `dart:isolate _RawReceivePort._handleMessage`）。
+- 未 mock 的平台通道回复永不完成：测试里用 `setMockMethodCallHandler` 返回 `null`，让 `EngineHost` 走"核心未打包"分支（真实生产行为）。
+- 泵送用有界 `pump(Duration)` + 显式 `timeout`，不用无限期 `pumpAndSettle`。
+- 范例见 `test/widget_test.dart`（完整壳）与 `test/lean_shell_test.dart`（精简壳）。
 
 ## 常见问题
 
