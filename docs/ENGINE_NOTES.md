@@ -199,3 +199,33 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
 - 桥 `liblusicgal_bridge.so` 零核心：`dlsym(RTLD_DEFAULT, "lg_<id>_<symbol>")` 运行期派发（JNI 侧 `EngineHost.ensureCore` 先 `System.loadLibrary("lusicgal_<id>")`）。
 - 输入统一 JSON（`engine_abi.h` v2）：point/key/text；键名→各核心码表映射在壳内（VK 基准在 `lg_common::input::vk_code`）。
 - 存档统一 `desc.save_path` → 壳设 `LUSICGAL_SAVE_DIR` → `scripts/patch_engines.sh` 的上游补丁消费（siglus/sena/rfvp；reallive 原生 `REALLIVE_SAVE_DIR`；KrKr2 原生 `writable_path`）。
+
+## 上游契约逐行核对记录（启动链路，pin 见总表）
+
+本地无 Android 工具链的替代验证 = 对 pin 住的上游源做逐签名/逐参数核对（Rust
+`extern "C"` 块与 C 适配器 argv 是仅有的两类编译器不校验的契约面）：
+
+- **Rust 四壳 extern 全量核对**（2024 轮，对照 /tmp 抓取的上游源）：
+  sena 9 符号（sena_ffi.rs:210-365 逐签名吻合，`step` 返回 0/1/2 语义、
+  touch phase 0=down 2/3=up）；rfvp 9 符号（rfvp_android_host.rs:92-289，
+  key phase 0=down 1=up 注释原文 "aligned with the Siglus host"）；siglus
+  19 符号（siglus_ffi.rs + siglus_android_host.rs；`game_fb_open` 的
+  error_out 出参、`game_fb_frame` 尺寸出参、probe JSON `"engine":"siglus"`
+  判定值 ← siglus_probe.rs:52/217）；artemis 走 `art3m1s_get_api_v1` 函数表
+  （类型结构装载，magic 0x415254334D314150）。
+- **Kirikiri**：适配器 `#include "engine_api.h"` —— 结构体/枚举由编译器
+  强制校验（POINTER_DOWN=1…BACK=8、STARTUP_STATE 四态、`writable_path_utf8`）。
+- **ONScripter argv**（onscripter_main.cpp:353-474）：`-r`/`-f`/`--save-dir`/
+  `--width`/`--height` 消费下一参数；**`-fullscreen` 是无参开关**（曾误传
+  `--fullscreen 0` → 误开 setFullscreenMode(1) + "0" 落 optionHelp 分支，
+  已改 `-window`）；非 flag 参数仅打印 help 继续（不退出）。
+- **xsystem35 argv**（src/xsystem35.c:458-474 + 197-299）：`__ANDROID__`
+  前置块**无条件访问 argv[1]**（`-gamedir` 必须在 argv[1]，我们恰如此）；
+  chdir(argv[2]) → `.xsys35rc` 从游戏目录加载；ParseOption 对未知参数
+  **静默忽略**（无 usage 陷阱）；`-savedir`/`-noimagecursor` 精确匹配。
+- **SDL2 Java 音频契约**（SDL_android.c 2.26.3:510-527/224-226/659-694、
+  2.32.10:232-236）：JNI_OnLoad 仅做 RegisterNatives；2.32.10 音频表含
+  nativeSetupJNI + add/removeAudioDevice 三符号（缺一即整表注册失败）；
+  audioOpen 双签名（2.26 `(IIII)[I` / 2.32 `(IIIII)[I`）+ 4 元素返回值；
+  音频回调只依赖 mAudioManagerClass（无 SDLActivity 类也能工作）——
+  SdlCompat.kt 已按此实现并由 `ensureCore` 装载后引导。
