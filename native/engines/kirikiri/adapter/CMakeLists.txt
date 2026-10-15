@@ -34,7 +34,11 @@ if(VCPKG_TARGET_ANDROID)
       "${ANDROID_NDK_HOME}/build/cmake/android.toolchain.cmake"
       CACHE FILEPATH "" FORCE)
   set(VCPKG_TARGET_TRIPLET "arm64-android" CACHE STRING "" FORCE)
-  set(VCPKG_OVERLAY_TRIPLETS "${KRKR2_DIR}/vcpkg/triplets" CACHE PATH "" FORCE)
+  # overlay triplet 用本目录（release-only 变体，含 krkr2 原版）——
+  # 优先级：先本目录，后 krkr2 的 vcpkg/triplets。
+  set(VCPKG_OVERLAY_TRIPLETS
+      "${CMAKE_CURRENT_SOURCE_DIR}/vcpkg/triplets;${KRKR2_DIR}/vcpkg/triplets"
+      CACHE PATH "" FORCE)
   set(VCPKG_OVERLAY_PORTS "${KRKR2_DIR}/vcpkg/ports" CACHE PATH "" FORCE)
   # manifest 用 krkr2 根的 vcpkg.json（适配器目录无 manifest）。
   set(VCPKG_MANIFEST_DIR "${KRKR2_DIR}" CACHE PATH "" FORCE)

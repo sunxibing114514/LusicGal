@@ -153,11 +153,17 @@ jobs:
       - name: fetch upstream + vcpkg
         run: |
           bash scripts/fetch_engines.sh kirikiri-next
-          git clone --depth 1 https://github.com/microsoft/vcpkg.git /tmp/vcpkg || true
+          # 完整历史：manifest 版本解析要 git show 旧 baseline/版本库提交
+          # （--depth 1 实测 "exists on disk, but not in <commit>" 必败）。
+          git clone https://github.com/microsoft/vcpkg.git /tmp/vcpkg || true
           /tmp/vcpkg/bootstrap-vcpkg.sh || true
           echo "VCPKG_ROOT=/tmp/vcpkg" >> "$GITHUB_ENV"
       - name: cross compile
-        run: bash native/engines/kirikiri/build_android.sh
+        run: |
+          # NDK 由 build_android.sh 自动探测（ANDROID_HOME/ndk/*）。
+          # vcpkg 港口风暴内存平稳；CI 内存宽裕，并发 2 提速。
+          export VCPKG_MAX_CONCURRENCY=2
+          bash native/engines/kirikiri/build_android.sh
       - uses: actions/upload-artifact@v4
         if: always()
         with:

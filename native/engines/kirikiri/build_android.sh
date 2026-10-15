@@ -17,6 +17,9 @@ if [ -z "$VCPKG" ] && [ -d "$SRC/vcpkg/vcpkg" ]; then VCPKG="$SRC/vcpkg/vcpkg"; 
   echo "✗ 未找到 vcpkg（VCPKG_ROOT 或 $SRC/vcpkg/vcpkg）"; exit 2;
 }
 export VCPKG_ROOT="$VCPKG"
+# 二进制缓存（HOME 只读容器会退到 ~/.cache 失败 —— 指到可写盘）。
+export VCPKG_DEFAULT_BINARY_CACHE="${VCPKG_DEFAULT_BINARY_CACHE:-/tmp/vcpkg-bin-cache}"
+mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 
 # 上游补丁（幂等）：krkr_SetAndroidContext / krkr_SetNativeWindow。
 bash "$ROOT/scripts/patch_engines.sh" kirikiri-next

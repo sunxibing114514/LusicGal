@@ -58,6 +58,8 @@ bash native/engines/xsystem35/build_android.sh    # 7 件 .so
 # Kirikiri：需 vcpkg 工具（clone + bootstrap + 完整历史 —— manifest 版本
 # 解析要 git show 旧提交）+ CMake ≥3.28；工具链拓扑见其 adapter/CMakeLists.txt
 # （入口 toolchain = vcpkg.cmake，链挂 NDK，manifest/overlay 指向 krkr2 根）。
+# 注意：整链（angle/ffmpeg/opencv4 等港口风暴）需 ~GB 级内存 —— CI 7GB
+# runner 为场域；本地小容器实测在 spirv-tools（-O3 -g 模板重单元）OOM。
 
 # Rust 壳独立检查（无需上游 crate 编译 —— 剥离 path 依赖，覆盖壳全部自有代码）
 bash scripts/rust_local_check.sh                  # host + aarch64-android 双目标

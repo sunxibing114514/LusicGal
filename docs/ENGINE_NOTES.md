@@ -272,3 +272,12 @@ set_surface/push_input/command_json）+ onsyuri.so 含 JNI_OnLoad；xsystem35
 **不可行项**（400MB 上限实证，非遗漏）：Rust 全量上游交叉编译 —— 四壳上游
 全 wgpu 系，单 crate（ash/vulkan 绑定）check 峰值即超限；壳独立检查
 （scripts/rust_local_check.sh）覆盖壳自有代码全量，上游本体仍以 CI 为准。
+
+**Kirikiri 本地构建边界（实证）**：工具链拓扑全通 —— vcpkg manifest 正常触发
+（入口 vcpkg.cmake 链挂 NDK），release-only overlay triplet 生效，136 个
+buildtree 生成、10 个港口（7zip/vulkan-headers/spirv-headers 等）安装并缓存。
+**整链在本容器不可行**：spirv-tools 的 diff.cpp 类模板重单元在 release
+（vcpkg release 惯例带 `-O3 -g`）单进程峰值仍超 ~470MB 余量，容器级 OOM
+（cgroup 含页缓存计 953MB 上限）直接杀宿主 shell —— 与 Rust wgpu 系同类的
+资源边界，非代码问题。CI kirikiri-android job（7GB runner）为整链场域，
+其 vcpkg 克隆须完整历史（已改）。
