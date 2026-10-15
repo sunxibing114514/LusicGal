@@ -99,6 +99,36 @@ REPLACEMENT = """pub fn desktop_storage() -> std::sync::Arc<dyn crate::host_api:
 }"""
 '
 
+# ---- rfvp：YukiHub 生产补丁集（vendored，pin 709b6ba 逐脚本实测）----------
+# 来源 xm486/YukiHub rfvp-build/（GPL-3.0，Android 生产验证）。实测结论：
+#   ✓ APPLIES（真实改码）：text_patch（YHFVP-TEXTPATCH-1.0 汉化查表）、
+#     android_log（android_logger + wgpu 噪音压制）、text_click（点击补全 +
+#     TextResume 保护）。
+#   ✓ NO-OP 回归护栏（上游 pin 已含等效修复，脚本幂等检测后空转）：
+#     additive_blend（上游 ffc73809 已入）、mask_dissolve（上游 e95f275a
+#     已入 —— crates/rfvp/src/rendering/mask_dissolve.rs 已是 git 跟踪文件）。
+#   ✗ 不 vendor：wmv_decoder（上游重构为 exponent_pow_tab_index + 单测，
+#     负数下标防护已在）、movie/audio_fix（上游 videoplayer 整体重写为
+#     symphonia 版 threaded/inline 双实现，声道校验 + SampleBuffer 按需
+#     分配俱在）、text_scale（psx cfg 重构致 3 锚点漂移，字号缩放为
+#     附加功能，待再锚定）、probe（YukiHub 诊断工具）。
+# 脚本按 __file__ 所在目录解析仓库根 —— 须先拷进 rfvp 根（同 YukiHub CI）。
+if matches rfvp; then
+  RFVP_ROOT="$UP/rfvp"
+  [ -d "$RFVP_ROOT" ] || { echo "✗ patch(rfvp): 缺上游源码"; exit 2; }
+  for py in apply_text_patch.py apply_android_log_patch.py \
+            apply_text_click_patch.py apply_fvp_additive_blend_patch.py \
+            apply_fvp_mask_dissolve_patch.py; do
+    src="$ROOT/native/engines/rfvp/patches/yukihub/$py"
+    [ -f "$src" ] || { echo "✗ patch(rfvp): 缺 $py"; exit 2; }
+    cp "$src" "$RFVP_ROOT/$py"
+    ( cd "$RFVP_ROOT" && python3 "$py" ) || {
+      echo "✗ patch(rfvp): $py 失败（锚点漂移？）"; exit 2; }
+    rm -f "$RFVP_ROOT/$py"
+  done
+  echo "OK   patch(rfvp) YukiHub 生产补丁集完成（3 实改 + 2 护栏）"
+fi
+
 # ---- KrKr2-Next：导出 C setter（宿主注入 JVM/Context/窗口）-----------------
 # 原实现只有 Kotlin 类绑定的 JNI 命名 setter（org.github.krkr2...），
 # LusicGal 不复用其 Flutter 插件 —— 注入经本补丁新增的纯 C 入口。
