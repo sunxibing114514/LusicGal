@@ -7,7 +7,8 @@
 //    补丁（Android_JNI_GetNativeWindow 优先咨询 LG_SDL_Window_Override）。
 //  - SDLActivity 生命周期依赖由插件侧 org.libsdl.app.SDLActivity 最小胶水
 //    （plugins/.../src/main/kotlin/org/libsdl/app/）承接。
-//  - 参数：-r <game_path> --save-dir <save_path>（上游 parseOption 语义）。
+//  - 参数：-r <game_path> --save-dir <save_path> -window（上游 parseOption
+//    语义，onscripter_main.cpp:353-474 逐行核对）。
 //  - 输入：JSON → SDL_PushEvent（触摸合成 SDL_MOUSEBUTTONDOWN/MOTIONBUTTONUP +
 //    key）；停止：SDL_QUIT。
 //
@@ -86,10 +87,13 @@ int ons_thread_main(OnsEngine *e) {
       const_cast<char *>("--save-dir"), const_cast<char *>(save.c_str()),
       const_cast<char *>("--width"), const_cast<char *>(width.c_str()),
       const_cast<char *>("--height"), const_cast<char *>(height.c_str()),
-      const_cast<char *>("--fullscreen"), const_cast<char *>("0"),
+      // 上游 -window 为无参开关（onscripter_main.cpp:395 setWindowMode()）；
+      // 嵌入面必须窗口模式。旧 "--fullscreen 0" 会误开 setFullscreenMode(1)
+      // 且 "0" 落进 optionHelp() 分支。
+      const_cast<char *>("-window"),
       nullptr,
   };
-  int argc = 11;
+  int argc = 10;
   // 上游阻塞主循环直到退出；返回码经事件回宿主。
   int rc = main(argc, argv);
   if (e->cb != nullptr) {
