@@ -65,6 +65,13 @@
 - 事件回调：`void (*lg_event_cb)(void* host, const char* json_utf8)`
 - 每核心前缀宏 `LG_CORE(id)` 展开 8 个 `lg_<id>_*` 符号；核心 = 独立 `liblusicgal_<id>.so`（Android）/ `.a`（iOS），桥零核心、纯 dlsym 派发 —— GPL/许可边界即库边界
 
+例外与范围：
+- **Ren'Py 走 Route B 外板壳**（`modules/renpy/`：独立 Gradle 模块 + 官方
+  `librenpython.so`，不经 ABI 桥；`patch_platform.py` 检测 `build-out/.ready`
+  后自动并入 `:module-renpy`，未 staging 零影响）。
+- **iOS 暂不构建**（用户指令）：核心只构建/验证 Android arm64；iOS 侧源码
+  （Swift 插件 / C 桥 / stub）保持就位但不构建、不进 CI。
+
 ## 5. 引擎核心层（native/engines）
 
 每引擎目录协议（对齐 AetherKiri `packages/` 思路）：
