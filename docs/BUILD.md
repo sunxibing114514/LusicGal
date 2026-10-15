@@ -25,7 +25,7 @@
 | `rust-cores`（matrix: sena/rfvp/siglus/artemis） | `scripts/build_rust_core.sh` 交叉编译 `liblusicgal_<id>.so`（arm64-v8a）→ artifact `lusicgal-core-<id>-arm64` | **push 即跑**（rust-cache 缓存重依赖） |
 | `onscripter-android` / `xsystem35-android` / `kirikiri-android` / `renpy-module`（手动） | C/C++ 核心交叉编译与 Ren'Py 外板壳 staging 尝试 | `continue-on-error`（非阻塞，逐个转正） |
 
-## 本地（可选，CI 均已覆盖）
+## 本地（可选，CI 均已覆盖；2026-10 本地实构建实证见下）
 
 ```bash
 flutter pub get
@@ -33,11 +33,39 @@ flutter analyze
 flutter test
 
 # 平台壳（已 .gitignore，按需生成）
-flutter create --platforms=android,ios --org com.lusicgal --project-name lusicgal .
-python3 scripts/patch_platform.py           # 注入 iOS 文件共享 / Android largeHeap 等
+flutter create --platforms=android --org com.lusicgal --project-name lusicgal .
+python3 scripts/patch_platform.py           # 注入 Android largeHeap / 重建校验
 flutter build apk --release
-flutter build ios --debug --no-codesign
 ```
+
+### 本地实构建实证（NDK r27c / Rust 1.99 / 400MB 内存约束容器）
+
+无需 Android Studio/SDK 全家桶 —— 只要 NDK（zip 解包）+（Rust 核心另需 rustc
+tarball 手动装，rustup 全组件解压在小内存容器会 OOM）：
+
+```bash
+export ANDROID_NDK_HOME=<ndk>; export PATH=$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH
+
+# JNI 桥（CI gates job 等价物；产物 liblusicgal_bridge.so）
+cmake -S native/bridge -B build-bridge -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
+      -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 -DCMAKE_BUILD_TYPE=Release
+cmake --build build-bridge
+
+# ONScripter / xsystem35（依赖上游 script/_fetch.sh 或 FetchContent，均自动拉）
+bash native/engines/onscripter/build_android.sh    # 9 件 .so
+bash native/engines/xsystem35/build_android.sh    # 7 件 .so
+
+# Kirikiri：需 vcpkg 工具（clone + bootstrap + 完整历史 —— manifest 版本
+# 解析要 git show 旧提交）+ CMake ≥3.28；工具链拓扑见其 adapter/CMakeLists.txt
+# （入口 toolchain = vcpkg.cmake，链挂 NDK，manifest/overlay 指向 krkr2 根）。
+
+# Rust 壳独立检查（无需上游 crate 编译 —— 剥离 path 依赖，覆盖壳全部自有代码）
+bash scripts/rust_local_check.sh                  # host + aarch64-android 双目标
+```
+
+实证结论（本仓库代码面）：桥/ONS/xsystem35 全链可产 arm64 真产物；Rust 四壳
+独立检查全绿；Rust 全量上游编译（wgpu 系单 crate 编译峰值）超 400MB 上限，
+不可行 —— 四壳上游交叉编译仍以 CI rust-cores 矩阵为准。
 
 ## 引擎核心构建（v2 核心分发模型）
 

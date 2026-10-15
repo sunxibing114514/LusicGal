@@ -229,3 +229,46 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
   audioOpen 双签名（2.26 `(IIII)[I` / 2.32 `(IIIII)[I`）+ 4 元素返回值；
   音频回调只依赖 mAudioManagerClass（无 SDLActivity 类也能工作）——
   SdlCompat.kt 已按此实现并由 `ensureCore` 装载后引导。
+
+## 本地实构建实证记录（NDK r27c arm64，2026-10）
+
+在 ~950MB cgroup / 400MB 用户上限容器内以 NDK r27c + Rust 1.99（tarball 手动
+装）实构建，**CI 首跑前修掉的 7 类必红 bug**（均本地编译/链接器报错实证）：
+
+1. **桥缺链 libandroid**：`ANativeWindow_fromSurface/_release` 在
+   libandroid.so —— CMakeLists 补 `find_library(android-lib android)`。
+   （--no-undefined 直接 ld.lld 报错，非运行期问题。）
+2. **Rust 壳 `blit` 导入**：lg_common 的 blit 模块 cfg(android) —— host 检查
+   下 `use lg_common::blit` 未解析（sena/siglus）→ 双行导入 + cfg 门控。
+3. **Rust 壳线程 spawn**：`move || run_loop(engine as usize, cb)` 捕获
+   `*mut c_void` 不 Send → 四壳统一改先 `let engine_addr = engine as usize`
+   再捕获 usize。
+4. **sena engine_start 双重转换**：`e as *mut SenaEngine as &mut SenaEngine`
+   非法 → `(engine as *mut SenaEngine).as_mut()`。
+5. **SDL 取窗注入设计级修正**（原反向 extern 形态三重死因）：
+   - `--no-undefined` 下 SDL.so 链不过（undefined LG_SDL_Window_Override）；
+   - bionic 无惰性绑定：SDL 先于适配器重定位，弱符号永久 NULL；
+   - SDL 全库 `-fvisibility=hidden`：适配器导出符号也遮蔽。
+   → SDL 侧导出 `LG_SDL_SetWindowOverride(fn)`（visibility default），
+   适配器正向注册（start/set_surface 双点幂等）。2.26.3/2.32.10 双树实测。
+6. **NDK r27 `ALooper_pollAll` unavailable**：SDL2-2.26.3 sensor 用它 →
+   硬错 → pollOnce（2.32.10 上游已自带同改）。
+7. **bz2 无 CMakeLists**：上游 onsyuri android CMake 是直列 7 个源文件成
+   SHARED 库 —— adapter 同构（add_subdirectory(bzip2 tarball) 必失败）；
+   lua 同理须 SHARED（build 脚本收集 liblua.so）。
+
+**Kirikiri vcpkg 工具链拓扑**（本地实证）：入口 toolchain 必须是
+vcpkg.cmake（链挂 NDK android.toolchain.cmake），manifest =
+VCPKG_MANIFEST_DIR→krkr2 根 vcpkg.json，overlay triplets/ports →
+krkr2/vcpkg/；**必须在 project() 前生效**（CMake 规则，曾因此 manifest
+不跑、find_package(FFMPEG) 空）；vcpkg registry 须完整 git 历史（manifest
+版本解析 git show 旧提交，--depth 1 克隆必败）；krkr2 根要求 CMake ≥3.28。
+
+**产物符号核验**（llvm-nm/readelf，arm64）：桥 10 Java_ 符号 + NEEDED 五链；
+ONS 适配器 8 ABI 符号齐（abi_version/create/destroy/start/surface_size/
+set_surface/push_input/command_json）+ onsyuri.so 含 JNI_OnLoad；xsystem35
+适配器 8 符号齐 + NEEDED 揭示 webp/sharpyuv 运行依赖（已入收集清单）。
+
+**不可行项**（400MB 上限实证，非遗漏）：Rust 全量上游交叉编译 —— 四壳上游
+全 wgpu 系，单 crate（ash/vulkan 绑定）check 峰值即超限；壳独立检查
+（scripts/rust_local_check.sh）覆盖壳自有代码全量，上游本体仍以 CI 为准。
