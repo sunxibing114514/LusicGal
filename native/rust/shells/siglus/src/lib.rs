@@ -21,7 +21,9 @@
 //! 存档：reallive 原生支持 REALLIVE_SAVE_DIR 环境变量；siglus 经
 //! scripts/patch_siglus_rs.sh（LUSICGAL_SAVE_DIR）注入。
 
-use lg_common::{android, blit, event, input, result, LgEventCb, LG_ABI_VERSION};
+use lg_common::{android, event, input, result, LgEventCb, LG_ABI_VERSION};
+#[cfg(target_os = "android")]
+use lg_common::blit;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
@@ -231,7 +233,10 @@ pub unsafe extern "C" fn lg_siglus_engine_start(engine: *mut c_void, cb: LgEvent
     e.running.store(true, Ordering::Release);
     let t = match std::thread::Builder::new()
         .name("lg_siglus_loop".into())
-        .spawn(move || run_loop(engine as usize, cb, path))
+        .spawn({
+            let engine_addr = engine as usize;
+            move || run_loop(engine_addr, cb, path)
+        })
     {
         Ok(t) => t,
         Err(_) => return result::IO,

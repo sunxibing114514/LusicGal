@@ -12,7 +12,9 @@
 //!   sena_host_resize / sena_host_destroy
 //!   sena_android_set_surface(h, window, w, h)（Android）
 
-use lg_common::{android, blit, event, input, result, LgEventCb, LG_ABI_VERSION};
+use lg_common::{android, event, input, result, LgEventCb, LG_ABI_VERSION};
+#[cfg(target_os = "android")]
+use lg_common::blit;
 use std::ffi::{c_char, c_void, CStr, CString};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex};
@@ -161,9 +163,8 @@ pub unsafe extern "C" fn lg_sena_engine_create(
 
 #[no_mangle]
 pub unsafe extern "C" fn lg_sena_engine_start(engine: *mut c_void, cb: LgEventCb) -> i32 {
-    let e = match engine.as_mut() {
-        Some(e) => e as *mut SenaEngine as &mut SenaEngine,
-        None => return result::INVALID_ARGUMENT,
+    let Some(e) = (engine as *mut SenaEngine).as_mut() else {
+        return result::INVALID_ARGUMENT;
     };
     if *e.handle.lock().unwrap() != std::ptr::null_mut() || e.running.load(Ordering::Acquire) {
         return result::INVALID_STATE;
@@ -196,7 +197,10 @@ pub unsafe extern "C" fn lg_sena_engine_start(engine: *mut c_void, cb: LgEventCb
 
     let joined = std::thread::Builder::new()
         .name("lg_sena_loop".into())
-        .spawn(move || run_loop(engine as usize, cb))
+        .spawn({
+            let engine_addr = engine as usize;
+            move || run_loop(engine_addr, cb)
+        })
         .map(|t| t)
         .map_err(|_| result::IO);
     match joined {
@@ -213,6 +217,7 @@ fn run_loop(engine_addr: usize, cb: LgEventCb) {
     let e = unsafe { &*(engine_addr as *const SenaEngine) };
     let handle = *e.handle.lock().unwrap();
     let host = e.host;
+    #[cfg(target_os = "android")]
     let mut frame_gen = 0u64;
     let mut last = Instant::now();
     let frame_budget = Duration::from_millis(16);

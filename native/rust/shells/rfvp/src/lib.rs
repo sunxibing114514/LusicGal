@@ -155,7 +155,10 @@ pub unsafe extern "C" fn lg_rfvp_engine_start(engine: *mut c_void, cb: LgEventCb
     e.running.store(true, Ordering::Release);
     let t = match std::thread::Builder::new()
         .name("lg_rfvp_loop".into())
-        .spawn(move || run_loop(engine as usize, cb))
+        .spawn({
+            let engine_addr = engine as usize;
+            move || run_loop(engine_addr, cb)
+        })
     {
         Ok(t) => t,
         Err(_) => return result::IO,

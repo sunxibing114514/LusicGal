@@ -63,9 +63,14 @@ bool json_get_num(const char *json, const char *key, double &out) {
 
 } // namespace
 
-extern "C" void *LG_SDL_Window_Override(void) {
+// SDL 取窗咨询点（注册回调形态，见 scripts/patch_sdl_android.sh hunk 1）。
+static void *lg_window_override_impl(void) {
   if (g_engine == nullptr) return nullptr;
   return g_engine->window.load(std::memory_order_acquire);
+}
+extern "C" void LG_SDL_SetWindowOverride(void *(*fn)(void));
+static void lg_register_window_override() {
+  LG_SDL_SetWindowOverride(&lg_window_override_impl);
 }
 
 extern "C" int main(int argc, char **argv); // xsystem35.c 的入口（库内符号）
@@ -117,6 +122,7 @@ extern "C" lg_result_t lg_xsystem35_engine_start(lg_engine_t engine,
   auto *e = reinterpret_cast<XSysEngine *>(engine);
   if (e == nullptr) return LG_ERR_INVALID_ARGUMENT;
   if (e->running.load(std::memory_order_acquire)) return LG_ERR_INVALID_STATE;
+  lg_register_window_override(); // 先注册再起线程（幂等）
   e->cb = cb;
   e->running.store(true, std::memory_order_release);
   try {
@@ -138,6 +144,7 @@ extern "C" lg_result_t lg_xsystem35_engine_set_surface(lg_engine_t engine,
   if (old != nullptr) {
     ANativeWindow_release(static_cast<ANativeWindow *>(old));
   }
+  lg_register_window_override(); // SDL 取窗前完成注册（幂等）
   return LG_OK;
 }
 

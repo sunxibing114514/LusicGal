@@ -65,10 +65,17 @@ set(LUA_CODE
     ${LUASRC_DIR}/lmathlib.c ${LUASRC_DIR}/loadlib.c ${LUASRC_DIR}/loslib.c  ${LUASRC_DIR}/lstrlib.c
     ${LUASRC_DIR}/ltablib.c ${LUASRC_DIR}/lutf8lib.c ${LUASRC_DIR}/linit.c
 )
-add_library(lua STATIC ${LUA_CODE})
+add_library(lua SHARED ${LUA_CODE})
 target_compile_options(lua PRIVATE -D_FILE_OFFSET_BITS=64)
+target_link_options(lua PRIVATE "-Wl,-z,max-page-size=16384")
 
-add_subdirectory(${BZ2_DIR} ${CMAKE_BINARY_DIR}/thirdparty/bz2 EXCLUDE_FROM_ALL)
+# 上游做法（src/onsyuri_android/app/cpp/CMakeLists.txt:65-73）：bz2 tarball
+# 无 CMakeLists —— 直接列 7 个源文件成库（SHARED，产出 libbz2.so）。
+set(BZ2_CODE
+    ${BZ2_DIR}/blocksort.c ${BZ2_DIR}/huffman.c ${BZ2_DIR}/crctable.c ${BZ2_DIR}/randtable.c
+    ${BZ2_DIR}/compress.c  ${BZ2_DIR}/decompress.c ${BZ2_DIR}/bzlib.c
+)
+add_library(bz2 SHARED ${BZ2_CODE})
 target_compile_options(bz2 PRIVATE -D_FILE_OFFSET_BITS=64)
 
 # ---- onsyuri 核心（上游根 CMake 的 Android 分支 = add_library(onsyuri SHARED)）
@@ -82,4 +89,5 @@ add_library(lusicgal_onscripter SHARED lg_onscripter.cpp)
 set_target_properties(lusicgal_onscripter PROPERTIES OUTPUT_NAME lusicgal_onscripter)
 target_include_directories(lusicgal_onscripter PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/include)
-target_link_libraries(lusicgal_onscripter PRIVATE onsyuri SDL2 log)
+# android = ANativeWindow_acquire/_release（set_surface）。
+target_link_libraries(lusicgal_onscripter PRIVATE onsyuri SDL2 log android)

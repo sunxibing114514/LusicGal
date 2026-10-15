@@ -18,6 +18,11 @@ find_library(log-lib log)
 target_link_libraries(lusicgal_bridge PRIVATE ${log-lib})
 target_link_libraries(lusicgal_bridge PRIVATE dl)
 
+# ANativeWindow_fromSurface/_release（attachSurface 注入渲染面）在
+# libandroid.so —— 桥必须链接（本地 NDK 构建实证缺此即链接失败）。
+find_library(android-lib android)
+target_link_libraries(lusicgal_bridge PRIVATE ${android-lib})
+
 # 核心不并入桥（v2 分发模型）：
 #   Android —— 各核心独立 liblusicgal_<id>.so，由
 #     native/engines/<id>/build_android.sh（C/C++ 核心）或

@@ -69,4 +69,5 @@ add_library(lusicgal_xsystem35 SHARED lg_xsystem35.cpp)
 set_target_properties(lusicgal_xsystem35 PROPERTIES OUTPUT_NAME lusicgal_xsystem35)
 target_include_directories(lusicgal_xsystem35 PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/include)
-target_link_libraries(lusicgal_xsystem35 PRIVATE xsystem35 SDL2 log)
+# android = ANativeWindow_acquire/_release（set_surface）。
+target_link_libraries(lusicgal_xsystem35 PRIVATE xsystem35 SDL2 log android)
