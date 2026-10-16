@@ -150,4 +150,75 @@ void main() {
     expect(r.engine, EngineId.kirikiri);
     expect(r.evidence.length, greaterThanOrEqualTo(2));
   });
+
+  test('Tyrano：tyrano.js 运行时', () async {
+    final g = await tmp.createTemp('tyrano');
+    await put(g, 'index.html');
+    await put(g, 'tyrano.js');
+    final r = detector.detect(g.path);
+    expect(r.engine, EngineId.tyrano);
+    expect(r.confident, isTrue);
+  });
+
+  test('Tyrano：.ks 场景脚本', () async {
+    final g = await tmp.createTemp('tyrano_ks');
+    await put(g, 'data/scenario/first.ks');
+    final r = detector.detect(g.path);
+    expect(r.engine, EngineId.tyrano);
+    expect(r.confident, isTrue);
+  });
+
+  test('RPG Maker MV：js/rpg_core.js', () async {
+    final g = await tmp.createTemp('rpgmv');
+    await put(g, 'index.html');
+    await put(g, 'js/rpg_core.js');
+    final r = detector.detect(g.path);
+    expect(r.engine, EngineId.rpgmv);
+    expect(r.confident, isTrue);
+  });
+
+  test('RPG Maker MZ：js/rmmz_core.js（优先于 MV 通用证据）', () async {
+    final g = await tmp.createTemp('rpgmz');
+    await put(g, 'index.html');
+    await put(g, 'js/plugins.js'); // MV 通用 +4
+    await put(g, 'js/rmmz_core.js'); // MZ +10
+    final r = detector.detect(g.path);
+    expect(r.engine, EngineId.rpgmz);
+    expect(r.confident, isTrue);
+  });
+
+  test('PC：MZ 魔数 exe（低权重，让位核心证据）', () async {
+    final g = await tmp.createTemp('pc');
+    await put(g, 'Game.exe', [0x4D, 0x5A, 0x90, 0x00]);
+    final r = detector.detect(g.path);
+    expect(r.engine, EngineId.pcwinlator);
+    // 混有 Ren'Py 证据时让位：
+    final g2 = await tmp.createTemp('pc_renpy');
+    await put(g2, 'Game.exe', [0x4D, 0x5A, 0x90, 0x00]);
+    await put(g2, 'game/scripts.rpa', 'RPA-3.0 1234 20\n'.codeUnits);
+    final r2 = detector.detect(g2.path);
+    expect(r2.engine, EngineId.renpy);
+  });
+
+  test('PSP：detectFile（ISO9660 魔数 @0x8001）', () async {
+    final f = File('${tmp.path}/umd.iso');
+    final bytes = List<int>.filled(0x8010, 0);
+    for (var i = 0; i < 5; i++) {
+      bytes[0x8001 + i] = 'CD001'.codeUnitAt(i);
+    }
+    await f.writeAsBytes(bytes);
+    final r = detector.detect(f.path); // 目录不存在 → 文件识别
+    expect(r.engine, EngineId.psp);
+    expect(r.confident, isTrue);
+  });
+
+  test('PSP：CSO 魔数 / PBP 魔数', () async {
+    final cso = File('${tmp.path}/game.cso');
+    await cso.writeAsBytes('CISO'.codeUnits);
+    expect(detector.detectFile(cso.path).engine, EngineId.psp);
+
+    final pbp = File('${tmp.path}/eboot.pbp');
+    await pbp.writeAsBytes([0x00, ...'PBP'.codeUnits]);
+    expect(detector.detectFile(pbp.path).engine, EngineId.psp);
+  });
 }

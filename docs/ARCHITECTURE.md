@@ -54,6 +54,23 @@
 - **事件流**：核心线程 → C `emit_event` → JNI `AttachCurrentThread` → 主 Handler → `EventChannel` 推送 `log/state/exit/core_missing`（+ art3m1s 的 `artemis_log/artemis_media/artemis_ui`）。
 - **PlatformView**：creationParams `{engineId, gameId}`；Android `EngineSurfaceView`（SurfaceView → `attachSurface`+`surfaceSize`），iOS v1 占位面（真实 Metal/CAMetalLayer 接线见 ROADMAP）。
 
+### 3.1 条目模型：三种引擎形态（2026-10 扩展）
+
+`EngineId` 注册表承载全部条目，形态三分（`isCore` / `isWebGame` /
+`isExternalLauncher`；`isOutboard` = renpy + 后两者统一播放器让位）：
+
+| 形态 | 引擎 | 路径语义 | 启动路径 |
+|---|---|---|---|
+| ABI 核心（8） | kirikiri…artemis | 游戏目录 | 桥 dlsym → `engine_start` |
+| Web 跑法（3） | tyrano / rpgmv / rpgmz | 游戏目录（或含 app.asar） | `WebGameActivity`：本地 HTTP（127.0.0.1）+ index.html 注入 `lg_web_boot.js` → WebView 全屏；MV/MZ 叠虚拟手柄（KeyboardEvent 合成） |
+| 外板启动条目（3） | psp / pcwinlator / androidapp | 镜像文件 / 游戏目录（engineDetail=exe）/ 包名 | `ExternalLaunchers`：PPSSPP 显式 Intent（ACTION_VIEW+GRANT）／winlator-cn ExternalLaunchActivity extras 协议／`getLaunchIntentForPackage` |
+
+- **探测语义**：核心 → dlsym；Web → 恒可用（WebView 内置）；外板 →
+  外部应用安装状态（UI 先行给出安装指引）。
+- **GameEntry.options**：条目级启动参数（winlator 覆盖参数、应用条目
+  dataUri 等），`EngineHost.launchGame` 与全局设置合并后下发；
+  path 的形态语义见 `game_entry.dart` 字段注释。
+
 ## 4. C ABI（native/include/lusicgal/engine_abi.h，v2 = 0x00020000）
 
 设计借鉴 AetherKiri `abi/include/engine_api.h`（其源头是 krkr2）：

@@ -137,4 +137,37 @@ class LusicgalEngines {
 
   /// 单个游戏的会话事件流。
   Stream<EngineEvent> events({String? gameId}) => _eventStream(gameId ?? 'global');
+
+  /// 可启动的应用清单（"添加 Android 应用条目"用）。
+  ///
+  /// 平台实现不可用（测试环境 / iOS）时返回空表。
+  Future<List<LaunchableApp>> listLaunchableApps() async {
+    try {
+      final raw =
+          await _method.invokeMethod<Map<Object?, Object?>>('listLaunchableApps');
+      final list = raw == null ? const [] : raw['apps'] as List<Object?>? ?? const [];
+      return list
+          .whereType<Map>()
+          .map((m) => LaunchableApp.fromMap(m.cast<Object?, Object?>()))
+          .toList();
+    } on MissingPluginException {
+      return const [];
+    } on PlatformException {
+      return const [];
+    }
+  }
+}
+
+/// 可启动的外部应用（包名 + 展示名）。
+@immutable
+class LaunchableApp {
+  const LaunchableApp({required this.packageName, required this.label});
+
+  factory LaunchableApp.fromMap(Map<Object?, Object?> map) => LaunchableApp(
+        packageName: map['package']! as String,
+        label: map['label']! as String,
+      );
+
+  final String packageName;
+  final String label;
 }

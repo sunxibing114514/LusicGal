@@ -26,6 +26,18 @@
   - Artemis = art3m1s-core（`art3m1s_get_api_v1` 60 字段函数表）
 - ✅ **SDL2 真实音频**：`SdlCompat.kt` 完整移植 SDLAudioManager
   （AudioTrack 实时输出、2.26/2.32 双签名兼容、装载后 nativeSetupJNI 引导）
+- ✅ **平台条目引擎（引擎 8 → 14）**：
+  - Web 跑法：**Tyrano**（TyranoScript/TyranoBuilder，含 app.asar
+    Electron 包）与 **RPG Maker MV / MZ** —— 本地 HTTP（127.0.0.1，
+    Range + 大小写/资源后缀回退）+ index.html 注入自适应 hook
+    （音频生命周期 / 存档桥 / MV·MZ 虚拟手柄 KeyboardEvent 合成）
+  - 外板启动条目：**PSP**（PPSSPP 显式 Intent 协议）、**PC**
+    （winlator-cn ExternalLaunchActivity extras 协议；容器/驱动/分辨率
+    可覆盖）、**Android 应用**（含 GameHub 快捷方式类条目）
+  - 导入三通道扩齐（目录 → 镜像文件 → 应用清单选择器）；检测器补
+    web/PC/PSP 证据与魔数；条目模型 +options（条目级参数）
+  - 许可：移植 YukiHub（GPL-3.0 同许可）架构重写 —— 署名与协议出处
+    见 docs/LICENSE_NOTES.md
 - ✅ 上游契约逐行核对（Rust 四壳 extern 全量 / argv / SDL JNI —— 见
   ENGINE_NOTES"契约核对记录"）
 - ✅ CI 骨架：门禁（selftest/JNI 桥/Rust FFI/pin 校验）+ 真核四矩阵 +

@@ -26,21 +26,42 @@ class EngineHost {
   }
 
   /// 启动一个游戏的核心会话。
+  ///
+  /// [options] 为全局设置项；条目级参数（PC 条目的 exe 路径、应用条目的
+  /// dataUri、winlator 覆盖参数）由 [GameEntry.options]/[engineDetail]
+  /// 自动合并（条目值优先）。
   Future<EngineLaunchResult> launchGame({
     required GameEntry game,
     required String savePath,
     Map<String, Object>? options,
-  }) =>
-      _engines.launch(
-        engineId: game.engine.id,
-        gameId: game.id,
-        gamePath: game.path,
-        savePath: savePath,
-        options: options,
-      );
+  }) {
+    final opts = <String, Object?>{...?options, ...game.options};
+    final detail = game.engineDetail;
+    if (game.engine.id == 'pcwinlator' &&
+        detail != null &&
+        detail.isNotEmpty) {
+      opts['exePath'] = detail;
+    }
+    // 平台通道编码要求非空值（game.options 反序列化可能带 null）。
+    final clean = <String, Object>{};
+    opts.forEach((k, v) {
+      if (v != null) clean[k] = v;
+    });
+    return _engines.launch(
+      engineId: game.engine.id,
+      gameId: game.id,
+      gamePath: game.path,
+      savePath: savePath,
+      options: clean,
+    );
+  }
 
   Stream<EngineEvent> events({String? gameId}) =>
       _engines.events(gameId: gameId);
+
+  /// 可启动的外部应用清单（"应用条目"导入用；平台不可用返回空表）。
+  Future<List<LaunchableApp>> listLaunchableApps() =>
+      _engines.listLaunchableApps();
 
   Future<void> pause() => _engines.sendCommand('pause');
 

@@ -18,6 +18,15 @@
 | SDL2 | Zlib | 宽松；`scripts/patch_sdl_android.sh` 的取窗补丁 diff 随附（Zlib 允许修改） |
 | freetype | FreeType/FTL | 宽松 |
 
+## Web 引擎与外板启动（2026-10 新增形态）
+
+| 组件 | 来源与许可 | 说明 |
+|---|---|---|
+| Web 跑法（LocalWebServer / AsarArchive / WebGameActivity / lg_web_boot.js） | 移植 + 重写自 **xm486/YukiHub（GPL-3.0）** `tyrano/TyranoActivity.java`、`tyrano/AsarArchive.java`、`assets/__tyrano__.js` | 本 App 为 GPL-3.0，同许可移植自洽；本地 HTTP + index.html 注入 + app.asar 解析 + 音频暂停表思路源自 YukiHub，代码已按 LusicGal 架构重写（Kotlin、Range 支持、RPG MV/MZ 自适应 hook、虚拟手柄为新增设计） |
+| PSP 外板 Intent 协议 | YukiHub `launcher/EmulatorLauncher.java`（GPL-3.0）的**协议事实**（ACTION_VIEW + PpssppActivity + GRANT flags） | 协议本身是对 PPSSPP 公开行为的描述，非可版权性表达；实现为 LusicGal 自写 |
+| winlator-cn 外置启动协议 | YukiHub `launcher/WinlatorPcLauncher.java`（GPL-3.0）引用的 winlator-cn 官方 `external-launch-guide.md` extras 规范 | extras 常量与语义按上游 winlator-cn 文档实现；代码自写 |
+| 应用条目（getLaunchIntentForPackage） | Android 公开 API | 无许可负担 |
+
 ## 分发形态（对应上述约束）
 
 1. **Android**：引擎核心均为 `liblusicgal_<id>.so`，运行时 `System.loadLibrary("lusicgal_<id>")` 探测加载 —— 核心与壳进程内动态共存，缺失任意核心不影响 App（这正是 `probeEngines` 的设计动机之一）。桥 `liblusicgal_bridge.so` 本身零核心代码（dlsym 派发），不构成 GPL 组合。

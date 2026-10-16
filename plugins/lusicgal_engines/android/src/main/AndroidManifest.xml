@@ -1,1 +1,12 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Web 引擎运行页（Tyrano / RPG MV / MZ；本地 HTTP + hook 注入跑法）。 -->
+    <application>
+        <activity
+            android:name="com.lusicgal.engines.web.WebGameActivity"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+    </application>
+</manifest>

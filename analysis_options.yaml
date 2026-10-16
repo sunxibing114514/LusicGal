@@ -1,6 +1,9 @@
 analyzer:
   exclude:
     - build/**
+    # 本地验证 harness（纯 dart:io，dart 直跑不经 flutter_test；
+    # 用 print/exit 汇报结果，见 docs/BUILD.md 本地验证节）。
+    - tool/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

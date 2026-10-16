@@ -82,7 +82,11 @@ class ImportService {
   }) async {
     final detect = detector.detect(source.path);
     final engine = forceEngine ?? (detect.confident ? detect.engine : null);
-    final detail = forceEngineDetail ?? detect.engineDetail;
+    var detail = forceEngineDetail ?? detect.engineDetail;
+    if (engine == EngineId.pcwinlator && (detail == null || detail.isEmpty)) {
+      // PC 条目：自动挑选目录顶层的 PE 启动器。
+      detail = pickLauncherExe(source);
+    }
     if (engine == null || engine == EngineId.unknown) {
       return ImportSummary(imported: false, detect: detect);
     }
@@ -159,6 +163,78 @@ class ImportService {
       engineDetail: detect.engineDetail,
       gameId: entry.id,
     );
+  }
+
+  /// 导入 PSP 镜像条目（单个 iso/cso/pbp/chd 文件复制入库；
+  /// 启动时经 PPSSPP 外板拉起）。
+  Future<ImportSummary> importPspFile(File file, {String? title}) async {
+    final detect = detector.detectFile(file.path);
+    if (detect.engine != EngineId.psp) {
+      return ImportSummary(imported: false, detect: detect, error: '不是 PSP 镜像（iso/cso/pbp/chd）');
+    }
+    if (!file.existsSync()) {
+      return ImportSummary(imported: false, detect: detect, error: '文件不存在');
+    }
+    final id = GameEntry.newId();
+    try {
+      await store.gamesDir.create(recursive: true);
+      // 镜像体积可能数 GB：优先 rename（同分区瞬时），失败退化为复制。
+      final target = File(p.join(store.gamesDir.path, id, p.basename(file.path)));
+      await target.parent.create(recursive: true);
+      try {
+        await file.rename(target.path);
+      } on FileSystemException {
+        await file.copy(target.path);
+      }
+      final entry = await store.addNew(
+        title: (title ?? p.basenameWithoutExtension(file.path)).trim(),
+        engine: EngineId.psp,
+        path: target.path,
+      );
+      return ImportSummary(imported: true, detect: detect, gameId: entry.id);
+    } on FileSystemException catch (e) {
+      return ImportSummary(imported: false, detect: detect, error: e.message);
+    }
+  }
+
+  /// 添加 Android 应用条目（不复制任何文件；path = 包名）。
+  Future<ImportSummary> addAppEntry({
+    required String packageName,
+    required String label,
+  }) async {
+    final detect = const DetectResult(
+      engine: EngineId.androidapp,
+      evidence: [DetectEvidence('app:$packageName', '已安装应用条目', 10)],
+    );
+    final entry = await store.addNew(
+      title: label.trim().isEmpty ? packageName : label.trim(),
+      engine: EngineId.androidapp,
+      path: packageName,
+    );
+    return ImportSummary(imported: true, detect: detect, gameId: entry.id);
+  }
+
+  /// PC 条目（winlator-cn）：在目录顶层找 PE 可执行作为启动目标。
+  static String? pickLauncherExe(Directory dir) {
+    try {
+      final exes = <File>[];
+      for (final entity in dir.listSync(followLinks: false)) {
+        if (entity is File && entity.path.toLowerCase().endsWith('.exe')) {
+          exes.add(entity);
+        }
+      }
+      if (exes.isEmpty) return null;
+      // 偏好名字含 game/start/launch 的；否则取第一个。
+      for (final f in exes) {
+        final b = p.basename(f.path).toLowerCase();
+        if (b.contains('game') || b.contains('start') || b.contains('launch')) {
+          return p.basename(f.path);
+        }
+      }
+      return p.basename(exes.first.path);
+    } on FileSystemException {
+      return null;
+    }
   }
 
   Future<void> _copyDir(Directory src, Directory dst) async {

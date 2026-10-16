@@ -45,6 +45,8 @@ class EngineDetector {
   DetectResult detect(String rootPath) {
     final root = Directory(rootPath);
     if (!root.existsSync()) {
+      // 目录不存在：可能是文件条目（PSP 镜像）—— 走文件识别。
+      if (File(rootPath).existsSync()) return detectFile(rootPath);
       return const DetectResult(engine: EngineId.unknown, evidence: []);
     }
 
@@ -169,6 +171,43 @@ class EngineDetector {
       add(EngineId.xsystem35, '*.ald ×$aldCount', 'AliceSoft ALD 封包', 10);
     }
 
+    // ---- Tyrano（TyranoScript / TyranoBuilder）----
+    // Web 构建特征：tyrano.js 运行时 + data/ 下 .ks 脚本；
+    // 桌面构建特征：Electron app.asar（根或 resources/）。
+    final asarCount = (ctx.byExtension['asar'] ?? const []).length;
+    if (asarCount > 0) {
+      add(EngineId.tyrano, 'app.asar ×$asarCount', 'Electron 应用包（TyranoBuilder 桌面导出）', 9);
+    }
+    if (ctx.fileNames.contains('tyrano.js')) {
+      add(EngineId.tyrano, 'tyrano.js', 'TyranoScript 运行时', 10);
+    }
+    final ksCount = (ctx.byExtension['ks'] ?? const []).length;
+    if (ksCount > 0) {
+      add(EngineId.tyrano, '*.ks ×$ksCount', 'TyranoScript 场景脚本', 6);
+    }
+
+    // ---- RPG Maker MV / MZ ----
+    if (ctx.fileNames.contains('rpg_core.js')) {
+      add(EngineId.rpgmv, 'js/rpg_core.js', 'RPG Maker MV 核心运行时', 10);
+    }
+    if (ctx.fileNames.contains('rmmz_core.js')) {
+      add(EngineId.rpgmz, 'js/rmmz_core.js', 'RPG Maker MZ 核心运行时', 10);
+    }
+    if (ctx.fileNames.contains('plugins.js') && ctx.fileNames.contains('index.html')) {
+      // MV/MZ 通用插件清单；不与核心冲突（核心引擎目录不会同时是 web 根）。
+      add(EngineId.rpgmv, 'index.html + js/plugins.js', 'RPG 工程结构（MV 按核心文件细分）', 4);
+    }
+
+    // ---- PC（Windows 游戏 → winlator-cn 外置启动）----
+    // 注意权重克制：多数引擎目录都附带 Windows 版启动器 exe，
+    // 期望让位给更强的核心证据（rpa/xp3/ald…）。
+    for (final path in (ctx.byExtension['exe'] ?? const <String>[]).take(3)) {
+      if (_hasBytesPrefix(path, [0x4D, 0x5A])) {
+        add(EngineId.pcwinlator, _basename(path), 'PE 可执行（MZ 魔数）', 6);
+        break;
+      }
+    }
+
     // ---- 汇总：取最高分；证据全量保留（供 UI 手动改判） ----
     if (scores.isEmpty) {
       return DetectResult(engine: EngineId.unknown, evidence: ctx.evidence);
@@ -183,6 +222,82 @@ class EngineDetector {
   }
 
   // ----------------------------------------------------------------------
+
+  /// 对单个文件做识别（PSP 镜像条目：iso / cso / pbp / chd）。
+  /// 协议参考：PPSSPP 的 UMD 镜像（ISO9660/UDF + CSO 压缩 + PBP 打包）。
+  DetectResult detectFile(String filePath) {
+    final f = File(filePath);
+    if (!f.existsSync()) {
+      return const DetectResult(engine: EngineId.unknown, evidence: []);
+    }
+    final base = _basename(filePath);
+    final dot = base.lastIndexOf('.');
+    final ext = dot > 0 ? base.substring(dot + 1).toLowerCase() : '';
+
+    final evidence = <DetectEvidence>[];
+    void add(String reason, double weight) =>
+        evidence.add(DetectEvidence(base, reason, weight));
+
+    switch (ext) {
+      case 'iso':
+        // ISO9660 卷描述符 "CD001" @ 0x8001（PSP UMD 也用它）。
+        if (_hasBytesPrefixAt(filePath, 0x8001, 'CD001')) {
+          add('光盘镜像（ISO9660 魔数校验通过）', 10);
+          break;
+        }
+        add('ISO 镜像（按扩展名）', 6);
+        break;
+      case 'cso':
+        if (_hasBytesPrefixAt(filePath, 0, 'CISO')) {
+          add('CSO 压缩镜像（CISO 魔数校验通过）', 10);
+          break;
+        }
+        add('CSO 压缩镜像（按扩展名）', 6);
+        break;
+      case 'pbp':
+        if (_hasBytesPrefixAt(filePath, 0, '\u0000PBP')) {
+          add('PBP 打包镜像（PBP 魔数校验通过）', 10);
+          break;
+        }
+        add('PBP 打包镜像（按扩展名）', 6);
+        break;
+      case 'chd':
+        // PPSSPP ≥ v1.13 支持 CHD；MAME CHD 头 "MAMECHD"。
+        add('CHD 压缩镜像（PPSSPP 支持）', 7);
+        break;
+      case 'exe':
+        if (_hasBytesPrefixAt(filePath, 0, 'MZ')) {
+          add('PE 可执行（MZ 魔数）→ PC 条目建议手动指定目录', 4);
+        }
+        break;
+      default:
+        return const DetectResult(engine: EngineId.unknown, evidence: []);
+    }
+    return DetectResult(
+      engine: ext == 'exe' ? EngineId.pcwinlator : EngineId.psp,
+      evidence: evidence,
+    );
+  }
+
+  /// 读取 [offset] 处的 ASCII 前缀比较。
+  static bool _hasBytesPrefixAt(String path, int offset, String magic) {
+    try {
+      final f = File(path);
+      if (!f.existsSync() || f.lengthSync() < offset + magic.length) {
+        return false;
+      }
+      final raf = f.openSync();
+      try {
+        raf.setPositionSync(offset);
+        final bytes = raf.readSync(magic.length);
+        return String.fromCharCodes(bytes).startsWith(magic);
+      } finally {
+        raf.closeSync();
+      }
+    } on Exception {
+      return false;
+    }
+  }
 
   void _scan(Directory dir, int depth, _ScanContext ctx) {
     if (depth > maxDepth) return;

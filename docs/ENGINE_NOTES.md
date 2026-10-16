@@ -281,3 +281,86 @@ buildtree 生成、10 个港口（7zip/vulkan-headers/spirv-headers 等）安装
 （cgroup 含页缓存计 953MB 上限）直接杀宿主 shell —— 与 Rust wgpu 系同类的
 资源边界，非代码问题。CI kirikiri-android job（7GB runner）为整链场域，
 其 vcpkg 克隆须完整历史（已改）。
+
+---
+
+## 平台条目引擎（2026-10 新增：Tyrano / RPG MV / MZ / PSP / PC / 应用）
+
+**形态三分**（docs/ARCHITECTURE.md「条目模型」同步）：ABI 核心之外新增
+两种非核心形态 —— **Web 跑法**（tyrano/rpgmv/rpgmz）与**外板启动条目**
+（psp/pcwinlator/androidapp）。三者共用同一 `EngineId` 注册表与
+`launch` 通道；`isOutboard` 统一播放器让位逻辑（renpy Route B 同模式）。
+
+### Web 跑法（tyrano / rpgmv / rpgmz）
+
+- **机制**（移植 YukiHub GPL-3.0 架构重写）：
+  `WebGameActivity`（插件 Manifest 经 merger 并入）→ `LocalWebServer`
+  （仅 127.0.0.1）供游戏文件 + index.html 注入 `lg_web_boot.js` →
+  WebView 全屏加载 `http://localhost:<port>/index.html`。
+- **hook 自适应**（lg_web_boot.js，注入一次，运行时识别）：
+  TyranoScript（`window.TYRANO.kag`）→ kag 音频表暂停/恢复 +
+  `$.setStorage/$.getStorage` 桥接落盘（lusicgalBridge）；RPG MV
+  （`js/rpg_core.js` 定义 Utils/Graphics）与 MZ（rmmz_ 同名核心）→
+  AudioContext 构造器包装跟踪 + <audio>/<video> 元素表；虚拟手柄经
+  `__lgKey()` 合成 KeyboardEvent（含 keyCode/which —— MV 的 Input 表按
+  keyCode 映射）。
+- **资源回退**（YukiHub 同款，游戏包大小写混乱与 MV 加密资源名必需）：
+  大小写不敏感逐段解析 + `.m4a→.ogg` / `.rpgmvm→.rpgmvo`（反向亦然）；
+  Range 请求支持（音频视频拖动）。
+- **TyranoBuilder 桌面导出**：根或 `resources/` 下的 `app.asar` 经
+  `AsarArchive`（Electron 头 magic=4 + headerSize + JSON 目录 + 数据区）
+  直接读取 —— 无需解包。
+- **存档**：MV/MZ 走 DOM storage（应用数据目录持久）；Tyrano 走桥
+  `savedata/*.sav`；均随书库条目生命周期。
+- **虚拟手柄**：rpgmv/rpgmz 条目叠加原生按钮层（方向/确认/取消），
+  经 evaluateJavascript 合成事件 —— MV/MZ 的键盘交互映射到触屏。
+
+### 外板启动条目（psp / pcwinlator / androidapp）
+
+- **psp**：条目 path = 镜像文件（iso/cso/pbp/chd，导入优先 rename）。
+  启动 = `ACTION_VIEW(*/*)` + 显式组件
+  `org.ppsspp.ppsspp/.PpssppActivity` + GRANT 读写 flags（协议移植
+  YukiHub）；未安装 → errorCode PPSSPP_NOT_INSTALLED，UI 提示安装。
+  识别：ISO9660 `CD001`@0x8001 / CSO `CISO` / PBP `\0PBP` 魔数。
+- **pcwinlator**：条目 path = 游戏目录，engineDetail = exe 相对路径
+  （导入时 `pickLauncherExe` 自动挑：名含 game/start/launch 优先）。
+  启动 = winlator-cn 外置启动协议（`com.winlator/.ExternalLaunchActivity`，
+  extras：dir_path/exe_path/confirm=false/launch_id；options 可带
+  container_id/container_name/graphics_driver/dxwrapper/screen_size/
+  lc_all 覆盖）—— 协议来自 winlator-cn 官方 external-launch-guide。
+  识别：目录内 MZ 魔数 exe（权重克制 +6，让位 xp3/rpa 等核心证据）。
+- **androidapp**：条目 path = 包名（导入面板"应用条目"列出可启动应用）。
+  启动 = `getLaunchIntentForPackage`（GameHub 快捷方式同归此类）。
+- **探测语义**：probe 对外板条目 = 外部应用安装状态（psp→PPSSPP、
+  pcwinlator→winlator-cn 1005+ ExternalLaunchActivity），UI 可先给出
+  安装指引；web 引擎恒可用（WebView 内置）。
+
+### 接线清单（本次落地文件）
+
+- `lib/core/models/engine_id.dart`：+6 id（isCore/isWebGame/
+  isExternalLauncher/isOutboard 形态标志）。
+- `lib/core/models/game_entry.dart`：+options（持久化 JSON；path 语义
+  按形态变化，见字段注释）。
+- `lib/core/detect/engine_detector.dart`：web/pc 证据块 + detectFile
+  （PSP 镜像魔数）。
+- `lib/core/library/import_service.dart`：importPspFile / addAppEntry /
+  pickLauncherExe；importDirectory 对 pcwinlator 自动挑 exe。
+- `plugins/.../engines/ExternalLaunchers.kt`：三协议实现 + 应用清单。
+- `plugins/.../engines/web/{AsarArchive,LocalWebServer,WebGameActivity}.kt`
+  + assets `lg_web_boot.js` + Manifest activity 声明。
+- `plugins/.../LusicgalEnginesPlugin.kt`：launch 三分支（web/外板）+
+  probe 新语义 + listLaunchableApps；**修复预存隐患**：EngineHost
+  原引用类属性 context 不可见（Kotlin object 无闭包可见性）→ 增
+  `EngineHost.appContext`（onAttachedToEngine 注入）。
+- `lib/ui/...`：import_sheet 两通道（PSP 镜像/应用条目）、player_screen
+  isOutboard 让位 + 外板错误卡、ui_helpers 图标、engine_host options
+  合并（条目级 exePath/dataUri/覆盖参数）。
+
+### 边界与验证状态
+
+- **本地验证边界**：Dart/无 Android SDK 与 Flutter 工具链 —— 本容器
+  无 dart/flutter（CI app job 为编译场域）；Kotlin/Java 同理由 CI gates
+  覆盖。逻辑一致性已按既有模式人工核对（renpy Route B 同构）。
+- **rfvp pin 709b6ba 不动**；Web 跑法不触碰任何原生核心。
+- **iOS 侧**：WebGameActivity 为 Android 实现；iOS 的 Web 跑法
+  （WKWebView）留待恢复 iOS 构建时接入 —— 数据层已就绪（isWebGame）。

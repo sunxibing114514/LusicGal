@@ -110,3 +110,22 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 - **为什么没有 android/ ios/ 目录？** 平台壳由 CI 确定性重建（`flutter create`），自定义原生代码全部在 `plugins/lusicgal_engines` 与 `native/` —— 见 docs/ARCHITECTURE.md §6。
 - **iOS 真机调试？** `flutter build ios --no-codesign` 产物 + Xcode 手动签名即可。
 - **导入的游戏去哪了？** App Documents `games/<id>/`；iOS 可通过"文件"App 的 LusicGal 目录直接投放（CI 已注入 UIFileSharingEnabled）。
+
+## 本地验证 harness（无 Flutter 工具链也可跑）
+
+纯 Dart 逻辑（检测器 / 条目模型）与 Web hook（JS）可在无 Flutter/Android SDK
+的环境直接验证 —— 容器内 400MB 约束下亦可行：
+
+```bash
+# Dart SDK 任意 ≥3.x（dart-sdk/bin 在 PATH）
+dart tool/detector_harness_check.dart    # 检测器新规则 + 回归（20 项）
+dart tool/gameentry_harness_check.dart   # GameEntry options 序列化往返（6 项）
+node plugins/lusicgal_engines/android/src/main/assets/lg_web_boot.js  # 语法检查
+# node 冒烟（音频生命周期 / 按键合成 / Tyrano 存档桥）见 ENGINE_NOTES
+```
+
+- harness 直跑真实源码（`lib/core/…` 相对导入），非副本；`tool/**`
+  已排除静态分析（print/exit 汇报）。
+- CI 等价物：`test/engine_detector_test.dart`（flutter test）已含同一批
+  规则断言；Kotlin（ExternalLaunchers / WebGameActivity / 插件路由）由
+  CI gates + app 构建覆盖 —— 本容器无 Android SDK，为既定边界。

@@ -64,9 +64,9 @@ class _PlayerScreenState extends State<PlayerScreen> {
       }
     });
     if (result.ok) {
-      // Ren'Py Route B：游戏在外板壳 Activity 全屏运行，本页自动让位
-      //（外板退出即回到书库）。
-      if (widget.game.engine.id == 'renpy') {
+      // 外板形态（Ren'Py Route B / Web 引擎 / 外板启动条目）：
+      // 游戏在全屏 Activity 或外部应用中运行，本页自动让位（退出即回书库）。
+      if (widget.game.engine.isOutboard) {
         Future<void>.delayed(const Duration(milliseconds: 400), () {
           if (mounted) Navigator.of(context).maybePop();
         });
@@ -204,6 +204,24 @@ class _PlayerScreenState extends State<PlayerScreen> {
                           style: TextStyle(color: scheme.onErrorContainer),
                         ),
                       ],
+                    ),
+                  ),
+                ),
+              ),
+            // 外板启动失败（如 PPSSPP/winlator-cn 未安装）：非核心问题，
+            // 单独提示（不套用"核心未打包"文案）。
+            if (_launched && !_coreMissing && _message != null)
+              Positioned(
+                left: 16,
+                right: 16,
+                top: MediaQuery.of(context).padding.top + 64,
+                child: Card(
+                  color: scheme.errorContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _message!,
+                      style: TextStyle(color: scheme.onErrorContainer),
                     ),
                   ),
                 ),

@@ -14,16 +14,23 @@ class GameEntry {
     this.lastPlayedAt,
     this.playedSeconds = 0,
     this.pathMissing = false,
+    this.options = const {},
   });
 
   final String id;
   String title;
   EngineId engine;
 
-  /// 引擎细分（如 KEY 系下的 "RealLive" / "AVG32"）。
+  /// 引擎细分（如 KEY 系下的 "RealLive" / "AVG32"；PC 条目的 exe 相对路径）。
   String? engineDetail;
 
   /// 游戏文件所在目录（导入后位于 App 沙盒内）。
+  ///
+  /// 形态按引擎变化：
+  /// - 核心/Web 引擎：游戏目录；
+  /// - PSP：镜像文件路径（*.iso / *.cso / *.pbp）；
+  /// - PC：游戏目录（exe 相对路径存 [engineDetail]）；
+  /// - Android 应用条目：包名。
   String path;
   final DateTime addedAt;
   DateTime? lastPlayedAt;
@@ -31,6 +38,9 @@ class GameEntry {
 
   /// 文件丢失（用户手动删除了目录）。
   bool pathMissing;
+
+  /// 启动选项（跨引擎通用 JSON：winlator 覆盖参数、外板 data URI 等）。
+  Map<String, Object?> options;
 
   Map<String, Object?> toJson() => {
         'id': id,
@@ -41,10 +51,12 @@ class GameEntry {
         'addedAt': addedAt.toIso8601String(),
         'lastPlayedAt': lastPlayedAt?.toIso8601String(),
         'playedSeconds': playedSeconds,
+        if (options.isNotEmpty) 'options': options,
       };
 
   static GameEntry fromJson(Map<Object?, Object?> json) {
     final engineRaw = json['engine'];
+    final optionsRaw = json['options'];
     return GameEntry(
       id: json['id']! as String,
       title: json['title']! as String,
@@ -56,6 +68,9 @@ class GameEntry {
           ? null
           : DateTime.parse(json['lastPlayedAt']! as String),
       playedSeconds: (json['playedSeconds'] as num?)?.toInt() ?? 0,
+      options: optionsRaw is Map
+          ? optionsRaw.map((k, v) => MapEntry('$k', v))
+          : const {},
     );
   }
 
