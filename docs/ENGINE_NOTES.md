@@ -340,6 +340,19 @@ buildtree 生成、10 个港口（7zip/vulkan-headers/spirv-headers 等）安装
   pcwinlator→winlator-cn 1005+ ExternalLaunchActivity），UI 可先给出
   安装指引；web 引擎恒可用（WebView 内置）。
 
+### 可用性缺口修补（2026-10-16，跨应用 UID 实证）
+
+外板协议接通 ≠ 条目可玩：PPSSPP/Winlator 以**独立 UID** 运行，
+Android 11+ FUSE 禁止跨应用读 `Android/data/<pkg>` 与 `/data/user/0`。
+- PSP：入库沙盒的镜像 PPSSPP 打不开（file:// 跨应用被拒）。修补 =
+  `LusicgalGamesProvider`（只读 ContentProvider，FileProvider 同款
+  形态）+ `launchPsp` 沙盒路径自动转 content://（PPSSPP 官方
+  file/content 双 scheme 支持）+ GRANT_READ 授权。
+- PC：winlator-cn 的 dir_path 吃**本机路径**（非 URI，无 content://
+  可转），私有目录必然挂载失败。修补 = PC 条目一律**原位引用**
+  （导入不复制；「PC 游戏目录」选择公共存储目录）+ 启动侧
+  `DIR_NOT_SHARED` 守卫（目录在私有区时给出迁移指引，不静默失败）。
+
 ### 接线清单（本次落地文件）
 
 - `lib/core/models/engine_id.dart`：+6 id（isCore/isWebGame/
@@ -349,15 +362,26 @@ buildtree 生成、10 个港口（7zip/vulkan-headers/spirv-headers 等）安装
 - `lib/core/detect/engine_detector.dart`：web/pc 证据块 + detectFile
   （PSP 镜像魔数）。
 - `lib/core/library/import_service.dart`：importPspFile / addAppEntry /
-  pickLauncherExe；importDirectory 对 pcwinlator 自动挑 exe。
-- `plugins/.../engines/ExternalLaunchers.kt`：三协议实现 + 应用清单。
+  pickLauncherExe（顶层优先 + 一层子目录兜底，名含 game/start/launch
+  偏好）；importDirectory 对 pcwinlator **原位引用**（不搬沙盒）+
+  `addPcEntryInPlace`（公共存储目录选择流程）。
+- `plugins/.../engines/ExternalLaunchers.kt`：三协议实现 + 应用清单 +
+  `isUnderAppSandbox` 守卫。
+- `plugins/.../engines/LusicgalGamesProvider.kt`：**新增**——只读
+  ContentProvider（FileProvider 同款形态），沙盒游戏文件以
+  content:// 授权外部应用（PSP 场景核心）。
 - `plugins/.../engines/web/{AsarArchive,LocalWebServer,WebGameActivity}.kt`
-  + assets `lg_web_boot.js` + Manifest activity 声明。
+  + assets `lg_web_boot.js` + Manifest activity + provider 声明。
 - `plugins/.../LusicgalEnginesPlugin.kt`：launch 三分支（web/外板）+
-  probe 新语义 + listLaunchableApps；**修复预存隐患**：EngineHost
-  原引用类属性 context 不可见（Kotlin object 无闭包可见性）→ 增
-  `EngineHost.appContext`（onAttachedToEngine 注入）。
-- `lib/ui/...`：import_sheet 两通道（PSP 镜像/应用条目）、player_screen
+  probe 新语义 + listLaunchableApps + DIR_NOT_SHARED 指引文案；
+  **修复预存隐患**：EngineHost 原引用类属性 context 不可见（Kotlin
+  object 无闭包可见性）→ 增 `EngineHost.appContext`（注入）。
+- **iOS 源码位**（暂不构建，用户指令）：`WebGameViewController.swift`
+  （WKWebView loadFileURL 免本地服务器 + WKUserScript 注入共用
+  lg_web_boot.js；podspec resource_bundles 打包该资产）；外板三 id
+  probe 恒不可用（依赖 Android 外部应用）。
+- `lib/ui/...`：import_sheet 三通道（PSP 镜像/应用条目/PC 游戏目录
+  + 路径语义说明）、player_screen
   isOutboard 让位 + 外板错误卡、ui_helpers 图标、engine_host options
   合并（条目级 exePath/dataUri/覆盖参数）。
 

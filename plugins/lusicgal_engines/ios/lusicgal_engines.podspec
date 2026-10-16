@@ -26,6 +26,8 @@ Pod::Spec.new do |s|
   s.dependency 'Flutter'
   s.platform         = :ios, '14.0'
   s.swift_version    = '5.0'
+  # Web 引擎启动 hook（与 Android 共用同一资产；WKUserScript 注入用）。
+  s.resource_bundles = { 'lusicgal_engines' => ['../android/src/main/assets/*.js'] }
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
     # 弱符号（核心 stub）依赖 GNU ld 行为；Swift 与 C 混编模块照常工作。

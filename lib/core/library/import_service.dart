@@ -93,6 +93,24 @@ class ImportService {
     if (!source.existsSync()) {
       return ImportSummary(imported: false, detect: detect, error: '目录不存在');
     }
+    if (engine == EngineId.pcwinlator) {
+      // 原位条目：winlator-cn 按本机路径把目录挂进容器（独立 UID 读取），
+      // 沙盒内目录必然挂载失败 —— 不搬进沙盒，路径原样引用；若目录在
+      // 应用私有区，启动侧 DIR_NOT_SHARED 守卫会给出迁移指引。
+      final entry = await store.addNew(
+        title: (title ?? p.basename(source.path)).trim(),
+        engine: engine,
+        engineDetail: detail,
+        path: source.path,
+      );
+      return ImportSummary(
+        imported: true,
+        detect: detect,
+        engine: engine,
+        engineDetail: detail,
+        gameId: entry.id,
+      );
+    }
 
     final id = GameEntry.newId();
     final target = Directory(p.join(store.gamesDir.path, id));
@@ -191,7 +209,12 @@ class ImportService {
         engine: EngineId.psp,
         path: target.path,
       );
-      return ImportSummary(imported: true, detect: detect, gameId: entry.id);
+      return ImportSummary(
+        imported: true,
+        detect: detect,
+        engine: EngineId.psp,
+        gameId: entry.id,
+      );
     } on FileSystemException catch (e) {
       return ImportSummary(imported: false, detect: detect, error: e.message);
     }
@@ -202,7 +225,8 @@ class ImportService {
     required String packageName,
     required String label,
   }) async {
-    final detect = const DetectResult(
+    // 注：evidence 含包名插值 → 非 const 构造。
+    final detect = DetectResult(
       engine: EngineId.androidapp,
       evidence: [DetectEvidence('app:$packageName', '已安装应用条目', 10)],
     );
@@ -211,27 +235,86 @@ class ImportService {
       engine: EngineId.androidapp,
       path: packageName,
     );
-    return ImportSummary(imported: true, detect: detect, gameId: entry.id);
+    return ImportSummary(
+      imported: true,
+      detect: detect,
+      engine: EngineId.androidapp,
+      gameId: entry.id,
+    );
   }
 
-  /// PC 条目（winlator-cn）：在目录顶层找 PE 可执行作为启动目标。
+  /// 添加 PC 条目（原位引用公共存储目录，不复制 —— winlator-cn 按本机
+  /// 路径挂载容器，目录必须可被其独立 UID 读取）。
+  Future<ImportSummary> addPcEntryInPlace({
+    required Directory dir,
+    String? title,
+  }) async {
+    if (!dir.existsSync()) {
+      return ImportSummary(
+        imported: false,
+        detect: const DetectResult(engine: EngineId.unknown, evidence: []),
+        error: '目录不存在',
+      );
+    }
+    final detect = detector.detect(dir.path);
+    final exe = pickLauncherExe(dir);
+    if (exe == null) {
+      return ImportSummary(
+        imported: false,
+        detect: detect,
+        error: '目录内未找到 .exe 启动器',
+      );
+    }
+    final entry = await store.addNew(
+      title: (title ?? p.basename(dir.path)).trim(),
+      engine: EngineId.pcwinlator,
+      engineDetail: exe,
+      path: dir.path,
+    );
+    return ImportSummary(
+      imported: true,
+      detect: detect,
+      engine: EngineId.pcwinlator,
+      engineDetail: exe,
+      gameId: entry.id,
+    );
+  }
+
+  /// PC 条目（winlator-cn）：挑选启动 exe（顶层优先，一层子目录兜底；
+  /// 协议接受相对 dir_path 的路径）。名含 game/start/launch 优先。
   static String? pickLauncherExe(Directory dir) {
     try {
-      final exes = <File>[];
+      // 返回 [scanRoot] 下 .exe 的相对路径（可能只是文件名）。
+      String? pickFrom(Directory scanRoot, bool subScan) {
+        final exes = scanRoot
+            .listSync(followLinks: false)
+            .whereType<File>()
+            .where((f) => f.path.toLowerCase().endsWith('.exe'))
+            .toList();
+        if (exes.isEmpty) return null;
+        for (final f in exes) {
+          final b = p.basename(f.path).toLowerCase();
+          if (b.contains('game') || b.contains('start') || b.contains('launch')) {
+            return subScan
+                ? '${p.basename(scanRoot.path)}/${p.basename(f.path)}'
+                : p.basename(f.path);
+          }
+        }
+        return subScan
+            ? '${p.basename(scanRoot.path)}/${p.basename(exes.first.path)}'
+            : p.basename(exes.first.path);
+      }
+
+      final top = pickFrom(dir, false);
+      if (top != null) return top;
+      // 一层子目录兜底（bin/、Game/ 等惯例）。
       for (final entity in dir.listSync(followLinks: false)) {
-        if (entity is File && entity.path.toLowerCase().endsWith('.exe')) {
-          exes.add(entity);
+        if (entity is Directory) {
+          final found = pickFrom(entity, true);
+          if (found != null) return found;
         }
       }
-      if (exes.isEmpty) return null;
-      // 偏好名字含 game/start/launch 的；否则取第一个。
-      for (final f in exes) {
-        final b = p.basename(f.path).toLowerCase();
-        if (b.contains('game') || b.contains('start') || b.contains('launch')) {
-          return p.basename(f.path);
-        }
-      }
-      return p.basename(exes.first.path);
+      return null;
     } on FileSystemException {
       return null;
     }

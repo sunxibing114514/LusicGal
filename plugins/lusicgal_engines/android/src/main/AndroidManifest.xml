@@ -8,5 +8,14 @@
             android:hardwareAccelerated="true"
             android:screenOrientation="sensorLandscape"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+        <!-- 只读文件提供器（FileProvider 同款形态：exported=false +
+             grantUriPermissions=true；跨应用经 FLAG_GRANT_READ 临时授权
+             访问沙盒内游戏文件 —— PPSSPP 等独立 UID 场景）。 -->
+        <provider
+            android:name="com.lusicgal.engines.LusicgalGamesProvider"
+            android:authorities="com.lusicgal.games"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

@@ -31,15 +31,18 @@ object ExternalLaunchers {
             false
         }
 
-    /** 启动 PSP 镜像（file:// 或 content:// 均可；本 app 沙盒路径以 file:// 传）。 */
+    /** 启动 PSP 镜像。沙盒内路径自动转 content://（PPSSPP 是独立 UID，
+     *  读不到本应用私有目录；content + GRANT 授权是标准解法，PPSSPP
+     *  官方双 scheme 支持）。公共存储路径仍走 file://。 */
     fun launchPsp(context: Context, gamePath: String): String? {
         if (!isPpssppInstalled(context)) return "PPSSPP_NOT_INSTALLED"
         return try {
-            val uri = if (gamePath.startsWith("/")) {
-                Uri.parse("file://$gamePath")
-            } else {
-                Uri.parse(gamePath)
-            }
+            val uri = LusicgalGamesProvider.toContentUri(context, gamePath)
+                ?: if (gamePath.startsWith("/")) {
+                    Uri.parse("file://$gamePath")
+                } else {
+                    Uri.parse(gamePath)
+                }
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(uri, "*/*")
                 setClassName("org.ppsspp.ppsspp", "org.ppsspp.ppsspp.PpssppActivity")
@@ -95,6 +98,11 @@ object ExternalLaunchers {
     /**
      * 启动 Windows 游戏。[overrides] 键与 winlator-cn extras 一致（空值不下发）。
      * 返回 null = 成功；否则为错误码（见 YukiHub 同协议定义）。
+     *
+     * 私有目录守卫：winlator-cn 按本机路径（dir_path）把目录挂进容器 ——
+     * 它是独立 UID，Android 11+ FUSE 禁止跨应用访问 Android/data 与
+     * /data/user —— 沙盒内目录必然挂载失败。这里提前给出
+     * DIR_NOT_SHARED（用户可把游戏移到公共存储后原位重导）。
      */
     fun launchWinlator(
         context: Context,
@@ -105,6 +113,7 @@ object ExternalLaunchers {
     ): String? {
         if (!isWinlatorInstalled(context)) return "PACKAGE_NOT_INSTALLED"
         if (!isExternalLaunchSupported(context)) return "EXTERNAL_LAUNCH_UNSUPPORTED"
+        if (isUnderAppSandbox(context, gameDir)) return "DIR_NOT_SHARED"
         return try {
             val intent = Intent(Intent.ACTION_MAIN).apply {
                 setClassName(WINLATOR_PACKAGE, WINLATOR_ENTRY)
@@ -135,6 +144,23 @@ object ExternalLaunchers {
     }
 
     // ===== 应用条目（含 GameHub 快捷方式）=====
+
+    /** [path] 是否在本应用私有沙盒内（Winlator 不可读区）。 */
+    fun isUnderAppSandbox(context: Context, path: String): Boolean {
+        if (path.isBlank() || !path.startsWith("/")) return false
+        val target = try {
+            java.io.File(path).canonicalPath
+        } catch (t: Throwable) {
+            return false
+        }
+        val roots = (listOf(context.filesDir) +
+            context.getExternalFilesDirs(null).filterNotNull()).distinct()
+        for (root in roots) {
+            val rp = root.canonicalPath
+            if (target == rp || target.startsWith(rp + java.io.File.separator)) return true
+        }
+        return false
+    }
 
     /** 按包名启动（GameHub/Android 应用条目的通用形态）。 */
     fun launchAppEntry(context: Context, packageName: String, dataUri: String?): String? {

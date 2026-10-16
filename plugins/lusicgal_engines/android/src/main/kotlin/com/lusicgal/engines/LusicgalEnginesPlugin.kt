@@ -190,6 +190,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                     "PACKAGE_NOT_INSTALLED" -> "winlator-cn 未安装（com.winlator）"
                     "EXTERNAL_LAUNCH_UNSUPPORTED" -> "当前 Winlator 缺少 ExternalLaunchActivity（需 winlator-cn 1005+）"
                     "EXE_NOT_SPECIFIED" -> "PC 条目缺少 exe 路径（engineDetail）"
+                    "DIR_NOT_SHARED" -> "游戏目录在本应用私有目录内，Winlator 无法读取——请把游戏移动到公共存储（如 /storage/emulated/0/Games/）后经「PC 游戏目录」重新导入"
                     "APP_NOT_INSTALLED", "APP_NOT_LAUNCHABLE" -> "目标应用不可启动（可能已卸载）"
                     else -> "外板启动失败：$code"
                 }

@@ -63,13 +63,28 @@
 |---|---|---|---|
 | ABI 核心（8） | kirikiri…artemis | 游戏目录 | 桥 dlsym → `engine_start` |
 | Web 跑法（3） | tyrano / rpgmv / rpgmz | 游戏目录（或含 app.asar） | `WebGameActivity`：本地 HTTP（127.0.0.1）+ index.html 注入 `lg_web_boot.js` → WebView 全屏；MV/MZ 叠虚拟手柄（KeyboardEvent 合成） |
-| 外板启动条目（3） | psp / pcwinlator / androidapp | 镜像文件 / 游戏目录（engineDetail=exe）/ 包名 | `ExternalLaunchers`：PPSSPP 显式 Intent（ACTION_VIEW+GRANT）／winlator-cn ExternalLaunchActivity extras 协议／`getLaunchIntentForPackage` |
+| 外板启动条目（3） | psp / pcwinlator / androidapp | 镜像文件 / 游戏目录（**原位引用**，engineDetail=exe）/ 包名 | `ExternalLaunchers`：PPSSPP 显式 Intent（ACTION_VIEW+GRANT）／winlator-cn ExternalLaunchActivity extras 协议／`getLaunchIntentForPackage` |
+
+**跨应用可读性两铁律**（2026-10-16 实证补强）：
+- PPSSPP / Winlator 以独立 UID 运行，读不到本应用私有目录（Android
+  11+ FUSE 强制）。PSP 镜像入库沙盒后，经 `LusicgalGamesProvider`
+  （FileProvider 同款形态：exported=false + grantUriPermissions）
+  自动转 content:// + FLAG_GRANT_READ 临时授权；公共存储原位文件
+  仍走 file://。
+- Winlator 协议吃本机路径（非 URI），无 content:// 可转 → PC 条目
+  一律**原位引用**（`importDirectory` 识别 pcwinlator 即不搬沙盒；
+  `addPcEntryInPlace` + 「PC 游戏目录」选择器走公共存储）。目录若
+  在私有区，启动侧 `DIR_NOT_SHARED` 守卫给出迁移指引。
 
 - **探测语义**：核心 → dlsym；Web → 恒可用（WebView 内置）；外板 →
   外部应用安装状态（UI 先行给出安装指引）。
 - **GameEntry.options**：条目级启动参数（winlator 覆盖参数、应用条目
   dataUri 等），`EngineHost.launchGame` 与全局设置合并后下发；
   path 的形态语义见 `game_entry.dart` 字段注释。
+- **iOS 源码位对齐**：Web 三引擎 iOS 侧为 `WebGameViewController`
+  （WKWebView `loadFileURL` 免本地服务器 + WKUserScript 注入同一
+  `lg_web_boot.js`，经 podspec resource_bundles 打包）；psp/pcwinlator/
+  androidapp 于 iOS probe 恒不可用（依赖 Android 外部应用）。
 
 ## 4. C ABI（native/include/lusicgal/engine_abi.h，v2 = 0x00020000）
 

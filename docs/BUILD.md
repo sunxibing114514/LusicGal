@@ -122,9 +122,19 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 # Dart SDK 任意 ≥3.x（dart-sdk/bin 在 PATH）
 dart tool/detector_harness_check.dart    # 检测器新规则 + 回归（20 项）
 dart tool/gameentry_harness_check.dart   # GameEntry options 序列化往返（6 项）
+dart --packages=/tmp/alt_packages.json \
+  tool/import_flow_harness_check.dart    # 导入流 13 项（PC 原位/挑 exe/
+                                         # PSP 入库/应用条目/核心回归）
 node plugins/lusicgal_engines/android/src/main/assets/lg_web_boot.js  # 语法检查
 # node 冒烟（音频生命周期 / 按键合成 / Tyrano 存档桥）见 ENGINE_NOTES
 ```
+
+- **import_flow harness 的 foundation 桩**：LibraryStore imports
+  `package:flutter/foundation.dart`（传递依赖 dart:ui，纯 VM 编不动）
+  → 最小桩（ChangeNotifier / protected / visibleForTesting 三符号，
+  /tmp/fbstub）+ 替换包表（/tmp/alt_packages.json）。该 harness 已抓
+  两个真 bug：const 构造含字符串插值（CI analyze 必红）与子目录 exe
+  双重前缀 —— 真源码级验证的价值实证。
 
 - harness 直跑真实源码（`lib/core/…` 相对导入），非副本；`tool/**`
   已排除静态分析（print/exit 汇报）。
