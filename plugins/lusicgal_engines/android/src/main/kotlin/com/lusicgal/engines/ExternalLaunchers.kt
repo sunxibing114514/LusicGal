@@ -10,7 +10,7 @@ import android.net.Uri
  *
  * 协议来源（移植自 xm486/YukiHub GPL-3.0，launcher/EmulatorLauncher.java 与
  * launcher/WinlatorPcLauncher.java；见 docs/LICENSE_NOTES.md 署名）：
- *  - PSP：ACTION_VIEW + MIME `*/*` + 显式组件
+ *  - PSP：ACTION_VIEW + 任意类型 MIME + 显式组件
  *    org.ppsspp.ppsspp/.PpssppActivity，授予 URI 读写权限。
  *  - PC：winlator-cn 导出入口 com.winlator/.ExternalLaunchActivity，
  *    extras：dir_path / exe_path / confirm / launch_id（可选覆盖：

@@ -14,7 +14,7 @@ import android.view.Surface
  * SDL2 Android 后端（src/core/android/SDL_android.c）在 JNI_OnLoad 里把
  * org.libsdl.app.SDLAudioManager.nativeSetupJNI 绑定到 C 侧（RegisterNatives，
  * 见 2.26.3 SDL_android.c:224-226）；随后由 Java 侧调用该 native 完成回调
- * 方法表缓存（audioOpen/audioWrite*/…，SDL_android.c:659-694）——音频缓存
+ * 方法表缓存（audioOpen、audioWrite 系列，SDL_android.c:659-694）——音频缓存
  * 只依赖 mAudioManagerClass，不依赖 SDLActivity 类，因此无 Activity 宿主下
  * 也能获得真实 AudioTrack 音频。EngineHost.ensureCore 在 loadLibrary 后调用
  * nativeSetupJNI（见 LusicgalEnginesPlugin.kt）。
@@ -37,9 +37,9 @@ class SDLActivity {
         @JvmStatic
         var appContext: android.content.Context? = null
 
-        /** SDL JNI 查询的当前表面。 */
-        @JvmStatic
-        fun getNativeSurface(): Surface? = nativeSurface
+        // 注：SDL C 侧经 JNI 按名调 getNativeSurface —— 上面
+        // nativeSurface 属性的合成 getter 即该签名，无需显式同名函数
+        //（显式 fun 会与之 JVM 签名冲突）。
 
         @JvmStatic
         fun setOrientation(w: Int, h: Int, resizable: Boolean, hint: String?) {
