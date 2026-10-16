@@ -66,7 +66,8 @@ bash scripts/rust_local_check.sh                  # host + aarch64-android 双�
 ```
 
 实证结论（本仓库代码面）：桥/ONS/xsystem35 全链可产 arm64 真产物；Rust 四壳
-独立检查全绿；Rust 全量上游编译（wgpu 系单 crate 编译峰值）超 400MB 上限，
+独立检查全绿；Rust 全量上游编译（wgpu 系单 crate 编译峰值）超内存上限
+（历史实证 400MB；现行用户上限已收紧为 **300MB**，见下），
 不可行 —— 四壳上游交叉编译仍以 CI rust-cores 矩阵为准。
 
 ## 引擎核心构建（v2 核心分发模型）
@@ -114,7 +115,8 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 ## 本地验证 harness（无 Flutter 工具链也可跑）
 
 纯 Dart 逻辑（检测器 / 条目模型）与 Web hook（JS）可在无 Flutter/Android SDK
-的环境直接验证 —— 容器内 400MB 约束下亦可行：
+的环境直接验证 —— 容器内存约束下可行（现行上限 **300MB**；历史 400MB
+实证记录保留）：
 
 ```bash
 # Dart SDK 任意 ≥3.x（dart-sdk/bin 在 PATH）
@@ -126,6 +128,14 @@ node plugins/lusicgal_engines/android/src/main/assets/lg_web_boot.js  # 语法�
 
 - harness 直跑真实源码（`lib/core/…` 相对导入），非副本；`tool/**`
   已排除静态分析（print/exit 汇报）。
-- CI 等价物：`test/engine_detector_test.dart`（flutter test）已含同一批
-  规则断言；Kotlin（ExternalLaunchers / WebGameActivity / 插件路由）由
-  CI gates + app 构建覆盖 —— 本容器无 Android SDK，为既定边界。
+- **flutter 工具链为容器边界（2026-10-16 实证，300MB 现行上限）**：
+  - flutter 3.47.7 stable 可装可用（工具自身峰 RSS ≈ 97MB；pub get 绿）；
+  - `flutter analyze`：LSP 分析服务器交换完 capabilities 后峰值超 400MB
+    看护被杀（-9）——全包图（含 flutter 框架闭包）撑不下；
+  - `flutter test`：frontend 编译器（tool 82MB + compiler）47 秒被
+    cgroup OOM 击杀（"The Dart compiler exited unexpectedly"），无看护
+    直跑同结果 —— 与 Rust wgpu 系同类资源边界，非遗漏；
+  - 检测器/条目逻辑以纯 Dart harness 等价覆盖（同批断言）；Kotlin 侧
+    以 kotlinc（JDK17 + android-34 + embedding jar）全量编译绿 +
+    WebServer/Asar JVM 功能实测 17/17 替代。CI 恢复后 flutter
+    analyze/test 归 app job。

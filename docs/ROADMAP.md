@@ -44,7 +44,8 @@
   实验 job（kirikiri/onscripter/xsystem35/renpy-module）
 - ✅ 本地门禁复核：selftest `{"selftest":"ok","abi":"0x00020000"}` 绿；
   JNI 桥 10 Java 符号链接绿
-- ✅ **本地实构建（2026-10，NDK r27c arm64，400MB 内存约束容器）**：
+- ✅ **本地实构建（2026-10，NDK r27c arm64；内存约束容器 —— 实证时
+  400MB 上限，现行收紧为 300MB）**：
   - 真产物：`liblusicgal_bridge.so`（61KB/10 JNI 符号）、ONScripter 9 件
     （适配器+onsyuri+SDL2 栈+lua/bz2+STL）、xsystem35 7 件（适配器+
     xsystem35+SDL2/mixer+webp/sharpyuv+STL）—— 符号/NEEDED 逐一核验

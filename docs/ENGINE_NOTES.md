@@ -269,7 +269,12 @@ ONS 适配器 8 ABI 符号齐（abi_version/create/destroy/start/surface_size/
 set_surface/push_input/command_json）+ onsyuri.so 含 JNI_OnLoad；xsystem35
 适配器 8 符号齐 + NEEDED 揭示 webp/sharpyuv 运行依赖（已入收集清单）。
 
-**不可行项**（400MB 上限实证，非遗漏）：Rust 全量上游交叉编译 —— 四壳上游
+**不可行项**（400MB 上限实证，非遗漏；现行用户上限已收紧为 300MB，
+不可行集只增不减）：
+- **flutter 工具链（2026-10-16 增补）**：analyze 的 LSP 服务器峰值超 400MB
+  看护被杀；test 的 frontend 编译器 47s 被 cgroup OOM 击杀（工具本体峰
+  ~97MB 无辜）。等价替代：纯 Dart harness（检测器/条目 20/20+6/6）+
+  kotlinc 全插件编译绿 + WebServer/Asar JVM 实测 17/17。Rust 全量上游交叉编译 —— 四壳上游
 全 wgpu 系，单 crate（ash/vulkan 绑定）check 峰值即超限；壳独立检查
 （scripts/rust_local_check.sh）覆盖壳自有代码全量，上游本体仍以 CI 为准。
 
