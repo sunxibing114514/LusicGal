@@ -2,11 +2,11 @@
 ///
 /// 核心库命名约定：`liblusicgal_<id>.so`（Android）/ `lusicgal_<id>` 静态符号前缀（iOS）。
 ///
-/// 三种引擎形态（docs/ARCHITECTURE.md「条目模型」）：
+/// 两种引擎形态（docs/ARCHITECTURE.md「条目模型」；2026-10 用户指令：
+/// 移除 PSP/PC/应用三个外板条目，全部引擎 App 内直接游玩）：
 /// - [isCore]：ABI v2 原生核心（8 个，dlsym 桥派发）。
 /// - [isWebGame]：内置 WebView 跑法（Tyrano / RPG MV / MZ）—— 本地 HTTP 注入。
-/// - [isExternalLauncher]：外板启动条目（PPSSPP / winlator-cn / 安装的应用）。
-/// 后两类 [coreLibName] 为空 —— 不经核心库装载。
+/// 两类 [coreLibName] 语义不变；Web 引擎为空 —— 不经核心库装载。
 enum EngineId {
   kirikiri('kirikiri', 'Kirikiri', '吉里吉里 / KAG（*.xp3）', 'liblusicgal_kirikiri'),
   onscripter('onscripter', 'ONScripter', 'NScripter 系（nscript.dat / arc.nsa）', 'liblusicgal_onscripter'),
@@ -20,10 +20,6 @@ enum EngineId {
   tyrano('tyrano', 'Tyrano', 'TyranoScript / TyranoBuilder（index.html / app.asar）', ''),
   rpgmv('rpgmv', 'RPG Maker MV', 'RPG ツクール MV（js/rpg_core.js）', ''),
   rpgmz('rpgmz', 'RPG Maker MZ', 'RPG ツクール MZ（js/rmmz_core.js）', ''),
-  // ---- 外板启动平台条目 ----
-  psp('psp', 'PSP', 'PSP 镜像（*.iso / *.cso / *.pbp）→ PPSSPP', ''),
-  pcwinlator('pcwinlator', 'PC', 'Windows 游戏（*.exe）→ winlator-cn 外置启动', ''),
-  androidapp('androidapp', 'Android 应用', '已安装应用 / GameHub 快捷方式条目', ''),
   unknown('unknown', '未知', '未识别', '');
 
   const EngineId(this.id, this.label, this.description, this.coreLibName);
@@ -46,12 +42,9 @@ enum EngineId {
   /// 内置 WebView 跑法（本地 HTTP 服务 + hook 注入）。
   bool get isWebGame => id == 'tyrano' || id == 'rpgmv' || id == 'rpgmz';
 
-  /// 外板启动条目（外部应用承担实际运行）。
-  bool get isExternalLauncher =>
-      id == 'psp' || id == 'pcwinlator' || id == 'androidapp';
-
-  /// 启动后游戏在外部全屏运行，播放器页应自动让位（Ren'Py Route B 同模式）。
-  bool get isOutboard => id == 'renpy' || isWebGame || isExternalLauncher;
+  /// 启动后游戏脱离本页全屏运行，播放器页应自动让位
+  ///（Ren'Py Route B 与 Web 全屏页同模式）。
+  bool get isOutboard => id == 'renpy' || isWebGame;
 
   static EngineId fromId(String id) =>
       EngineId.values.firstWhere((e) => e.id == id, orElse: () => EngineId.unknown);

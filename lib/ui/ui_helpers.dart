@@ -17,10 +17,6 @@ extension EngineIdIcons on EngineId {
         EngineId.tyrano => Icons.web_asset_outlined,
         EngineId.rpgmv => Icons.grid_view_outlined,
         EngineId.rpgmz => Icons.grid_goldenratio_outlined,
-        // 外板启动平台条目。
-        EngineId.psp => Icons.sports_esports_outlined,
-        EngineId.pcwinlator => Icons.desktop_windows_outlined,
-        EngineId.androidapp => Icons.android_outlined,
         EngineId.unknown => Icons.help_outline,
       };
 }

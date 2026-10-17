@@ -58,40 +58,18 @@ Future<void> main() async {
   r = d.detect(g.path);
   check('rmmz_core.js 优先于 MV 通用证据', r.engine == EngineId.rpgmz && r.confident);
 
-  // --- 新规则：PC（MZ exe，让位核心证据）---
-  g = await tmp.createTemp('pc');
-  await put(g, 'Game.exe', [0x4D, 0x5A, 0x90, 0x00]);
-  r = d.detect(g.path);
-  check('MZ exe → pcwinlator (6 分)', r.engine == EngineId.pcwinlator && r.confident);
-
+  // --- PC 条目已移除（用户指令）：exe 不再产生证据 ---
   g = await tmp.createTemp('pc_renpy');
   await put(g, 'Game.exe', [0x4D, 0x5A, 0x90, 0x00]);
   await put(g, 'game/scripts.rpa', 'RPA-3.0 1234 20\n'.codeUnits);
   r = d.detect(g.path);
-  check('exe 让位 Ren\'Py 证据', r.engine == EngineId.renpy);
+  check('exe 不再产生 PC 证据（rpa 照常驱动 Ren\'Py）',
+      r.engine == EngineId.renpy && r.confident);
 
-  // --- 新规则：PSP 文件识别 ---
-  final iso = File('${tmp.path}/umd.iso');
-  final bytes = List<int>.filled(0x8010, 0);
-  for (var i = 0; i < 5; i++) {
-    bytes[0x8001 + i] = 'CD001'.codeUnitAt(i);
-  }
-  await iso.writeAsBytes(bytes);
-  r = d.detect(iso.path); // 目录不存在 → 文件通道
-  check('detect(file) → psp (ISO9660)', r.engine == EngineId.psp && r.confident);
-
-  final cso = File('${tmp.path}/game.cso');
-  await cso.writeAsBytes('CISO'.codeUnits);
-  check('CSO 魔数 → psp', d.detectFile(cso.path).engine == EngineId.psp);
-
-  final pbp = File('${tmp.path}/eboot.pbp');
-  await pbp.writeAsBytes([0x00, ...'PBP'.codeUnits]);
-  check('PBP 魔数 → psp', d.detectFile(pbp.path).engine == EngineId.psp);
-
-  final junkIso = File('${tmp.path}/junk.iso');
-  await junkIso.writeAsBytes(List<int>.filled(0x8010, 0x41)); // 无 CD001
-  r = d.detectFile(junkIso.path);
-  check('无魔数 iso → psp 按扩展名 (6)', r.engine == EngineId.psp && r.confident);
+  g = await tmp.createTemp('pc_only');
+  await put(g, 'Game.exe', [0x4D, 0x5A, 0x90, 0x00]);
+  r = d.detect(g.path);
+  check('纯 exe 目录 → unknown', r.engine == EngineId.unknown);
 
   // --- 回归：原有规则不回归 ---
   g = await tmp.createTemp('krkr');
@@ -117,15 +95,13 @@ Future<void> main() async {
   // --- EngineId 形态标志 ---
   check('isWebGame 三员', EngineId.tyrano.isWebGame &&
       EngineId.rpgmv.isWebGame && EngineId.rpgmz.isWebGame);
-  check('isExternalLauncher 三员', EngineId.psp.isExternalLauncher &&
-      EngineId.pcwinlator.isExternalLauncher && EngineId.androidapp.isExternalLauncher);
-  check('isOutboard = renpy + web + 外板', EngineId.renpy.isOutboard &&
-      EngineId.tyrano.isOutboard && EngineId.psp.isOutboard &&
+  check('isOutboard = renpy + web', EngineId.renpy.isOutboard &&
+      EngineId.tyrano.isOutboard &&
       !EngineId.kirikiri.isOutboard && !EngineId.onscripter.isOutboard);
-  check('fromId 往返', EngineId.fromId('pcwinlator') == EngineId.pcwinlator &&
+  check('fromId 往返', EngineId.fromId('tyrano') == EngineId.tyrano &&
       EngineId.fromId('nope') == EngineId.unknown);
   check('isCore 仅 8 真核', EngineId.kirikiri.isCore &&
-      !EngineId.tyrano.isCore && !EngineId.psp.isCore);
+      !EngineId.tyrano.isCore && !EngineId.renpy.isWebGame);
 
   await tmp.delete(recursive: true);
   print('\npassed=$passed failed=$failed');

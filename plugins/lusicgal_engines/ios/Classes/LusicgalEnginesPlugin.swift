@@ -25,8 +25,6 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         "rfvp", "sena", "xsystem35", "artemis",
         // Web 引擎（WKWebView 跑法；iOS 用 loadFileURL 免本地服务器）。
         "tyrano", "rpgmv", "rpgmz",
-        // 外板启动平台条目（Android 专属形态；iOS 报不可用）。
-        "psp", "pcwinlator", "androidapp",
     ]
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -96,15 +94,6 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
                     gameDir: gamePath, kind: engineId, saveDir: savePath)
             }
             result(["ok": true, "message": nil])
-            return
-        }
-        // ---- 外板启动条目：Android 专属（PPSSPP/Winlator 无 iOS 版）。
-        if engineId == "psp" || engineId == "pcwinlator" || engineId == "androidapp" {
-            result(["ok": false,
-                    "errorCode": engineId == "psp" ? "PPSSPP_NOT_INSTALLED"
-                          : engineId == "pcwinlator" ? "PACKAGE_NOT_INSTALLED"
-                          : "APP_NOT_INSTALLED",
-                    "message": "该条目形态依赖 Android 外部应用，iOS 不可用"])
             return
         }
 
@@ -182,11 +171,6 @@ public class LusicgalEnginesPlugin: NSObject, FlutterPlugin, FlutterStreamHandle
         if engineId == "tyrano" || engineId == "rpgmv" || engineId == "rpgmz" {
             return ["engineId": engineId, "available": true,
                     "version": "webview", "message": nil]
-        }
-        // 外板条目：依赖 Android 外部应用，iOS 恒不可用。
-        if engineId == "psp" || engineId == "pcwinlator" || engineId == "androidapp" {
-            return ["engineId": engineId, "available": false, "version": nil,
-                    "message": "该条目形态依赖 Android 外部应用（PPSSPP/Winlator/应用启动），iOS 不可用"]
         }
         if lg_ios_probe(engineId) == 1 {
             let abi = lg_ios_core_abi_version(engineId)

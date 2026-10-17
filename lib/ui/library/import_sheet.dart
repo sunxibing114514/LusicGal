@@ -8,7 +8,6 @@ import 'package:provider/provider.dart';
 import '../../core/library/import_service.dart';
 import '../../core/library/library_store.dart';
 import '../../core/models/engine_id.dart';
-import '../../engine/engine_host.dart';
 import '../ui_helpers.dart';
 
 /// 打开导入面板：扫描 App 专属目录的候选文件夹 / 系统选择器挑封包文件。
@@ -142,53 +141,6 @@ class _ImportSheetState extends State<ImportSheet> {
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _pickPspImage,
-                      icon: const Icon(Icons.sports_esports_outlined),
-                      label: const Text('PSP 镜像'),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _pickAndroidApp,
-                      icon: const Icon(Icons.android_outlined),
-                      label: const Text('应用条目'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: _busy ? null : _pickPcGameDir,
-                      icon: const Icon(Icons.desktop_windows_outlined),
-                      label: const Text('PC 游戏目录'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-              child: Text(
-                'PC 条目为原位引用（不复制）：目录须放在公共存储（如 '
-                '内部存储/Games/）以便 Winlator 挂载读取；PSP 镜像则会入库'
-                '（启动时自动授权给 PPSSPP）。',
-                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-              ),
-            ),
             const SizedBox(height: 12),
           ],
         ),
@@ -246,98 +198,6 @@ class _ImportSheetState extends State<ImportSheet> {
       );
     } else {
       _toast(summary.error ?? '导入失败');
-    }
-  }
-
-  /// PSP 镜像条目：选择 iso/cso/pbp/chd 文件复制入库（启动经 PPSSPP）。
-  /// PC 条目：选公共存储里的游戏目录（原位引用，不复制 —— Winlator 挂载）。
-  Future<void> _pickPcGameDir() async {
-    final dirPath = await FilePicker.getDirectoryPath();
-    if (dirPath == null || dirPath.isEmpty) return;
-    setState(() => _busy = true);
-    final summary = await _import.addPcEntryInPlace(dir: Directory(dirPath));
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (summary.imported) {
-      Navigator.of(context).pop();
-      _toast('已添加 PC 条目《${p.basename(dirPath)}》'
-          '（exe：${summary.engineDetail}）');
-    } else {
-      _toast(summary.error ?? '添加失败');
-    }
-  }
-
-  Future<void> _pickPspImage() async {
-    final picked = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['iso', 'cso', 'pbp', 'chd'],
-    );
-    final paths = picked.map((f) => f.path).whereType<String>().toList();
-    if (paths.isEmpty) return;
-    setState(() => _busy = true);
-    final summary = await _import.importPspFile(File(paths.first));
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (summary.imported) {
-      Navigator.of(context).pop();
-      _toast('已导入 PSP 镜像《${p.basenameWithoutExtension(paths.first)}》'
-          '（经 PPSSPP 启动）');
-    } else {
-      _toast(summary.error ?? '导入失败');
-    }
-  }
-
-  /// 应用条目：列出可启动的安装应用（含 GameHub 类快捷方式的载体）。
-  Future<void> _pickAndroidApp() async {
-    final host = context.read<EngineHost>();
-    final apps = await host.listLaunchableApps();
-    if (!mounted) return;
-    if (apps.isEmpty) {
-      _toast('未获取到应用清单（仅 Android 支持）');
-      return;
-    }
-    final app = await showDialog<({String package, String label})>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('选择应用条目'),
-        content: SizedBox(
-          width: 320,
-          height: 420,
-          child: ListView.builder(
-            shrinkWrap: true,
-            itemCount: apps.length,
-            itemBuilder: (context, i) => ListTile(
-              leading: const Icon(Icons.android_outlined),
-              title: Text(apps[i].label),
-              subtitle: Text(apps[i].packageName),
-              dense: true,
-              onTap: () => Navigator.of(dialogContext).pop(
-                (package: apps[i].packageName, label: apps[i].label),
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
-          ),
-        ],
-      ),
-    );
-    if (app == null) return;
-    setState(() => _busy = true);
-    final summary = await _import.addAppEntry(
-      packageName: app.package,
-      label: app.label,
-    );
-    if (!mounted) return;
-    setState(() => _busy = false);
-    if (summary.imported) {
-      Navigator.of(context).pop();
-      _toast('已添加应用条目《${app.label}》');
-    } else {
-      _toast(summary.error ?? '添加失败');
     }
   }
 

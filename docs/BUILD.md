@@ -1,13 +1,14 @@
 # BUILD — 构建 / 编译验证
 
-## CI（权威验证方式）
+## CI（配额空窗期不可用；恢复后权威）
 
-仓库推送后由 GitHub Actions 验证（对应用户要求：**编译验证在私有仓库完成，不在本地进行**）。
+仓库推送后由 GitHub Actions 验证。配额状态（2026-10-17）：私有仓库
+Actions 配额耗尽，run 创建后 runner 拒绝接入（steps=0）—— **CI 当前
+不可用**，本地已按下述手工管线补位实证；恢复后原流程生效。
 
 ### `.github/workflows/app.yml`
 
-> 配额说明：私有仓库 Actions 按分钟计费（macOS runner ×10）。默认 push 只跑
-> ubuntu job。**iOS 暂不构建**（用户指令）：引擎核心验证只做 Android arm64；
+> **iOS 暂不构建**（用户指令）：引擎核心验证只做 Android arm64；
 > iOS 侧源码（桥/插件/stub）保持就位但不构建、不进 CI。
 
 | Job | Runner | 步骤 | 产物 |
@@ -25,7 +26,65 @@
 | `rust-cores`（matrix: sena/rfvp/siglus/artemis） | `scripts/build_rust_core.sh` 交叉编译 `liblusicgal_<id>.so`（arm64-v8a）→ artifact `lusicgal-core-<id>-arm64` | **push 即跑**（rust-cache 缓存重依赖） |
 | `onscripter-android` / `xsystem35-android` / `kirikiri-android` / `renpy-module`（手动） | C/C++ 核心交叉编译与 Ren'Py 外板壳 staging 尝试 | `continue-on-error`（非阻塞，逐个转正） |
 
-## 本地（可选，CI 均已覆盖；2026-10 本地实构建实证见下）
+## 本地手工 APK 管线（2026-10-17 实证，**550MB 内存 / 550MB APK 上限**）
+
+容器边界（多轮实证，memory.events oom_kill 累计 11 次）：
+
+- cgroup `memory.max=954MB` 与外来服务共享（node/NCM 常驻 ~432MB）
+  → 有效余量 ~520MB，只读不可调、无 swap；
+- flutter 工具（~82MB）+ gradle daemon（~435MB）共存必超；
+- frontend_server 冷编完整框架闭包（即使 stub main）>550MB 被内核
+  OOM；gradle/AGP 的 includeBuild Kotlin 编译同为巨物 —— **gradle
+  全家在这台容器装不下**。
+
+因此 APK 用**逐阶段窄工具**拼装（每阶段单进程、小内存、可独立验证）：
+`flutter assemble`（仅引导内核）→ `kotlinc`（280m heap 实证绿）→
+`d8` → `aapt2 compile/link`（分离 res zip，**勿合并 values 文件**）
+→ cmake-NDK（桥 .so）→ `zipalign -p` → `apksigner`。
+
+```bash
+python3 tool/apk_pipeline/fetch_deps.py     # 依赖闭包预取（AAR→classes.jar+res）
+bash tool/make_stub_apk.sh                 # 全管线（可复现记录）
+# 产物 build/outputs/apk/debug/LusicGal-stub-debug.apk（402MB < 550MB ✓）
+```
+
+实证产物（2026-10-17）：`package=com.lusicgal.lusicgal v1`、
+launchable=`io.flutter.embedding.android.FlutterActivity`、
+`native-code=arm64-v8a`、apksigner verify 绿、105 entries、
+flutter_assets/kernel_blob.bin（引导内核 5.4KB）+ isolate_snapshot_data
++ lg_web_boot.js + libflutter.so（STORED 页对齐，extractNativeLibs=false）
++ classes.dex（embedding + androidx 闭包 + 插件 + GeneratedPluginRegistrant
+手写注册表，5.5MB）。
+
+### 内核边界与热换（Kernel Boundary & Hot-swap）
+
+**app.dill（真实业务内核）在本容器不可编** —— `frontend_server` 对
+`lib/main.dart`（material 框架闭包）的冷编峰值 >550MB，9+ 次 OOM
+实证；工具还强制注入 dart_plugin_registrant（引插件接口→框架闭包）。
+已装 APK 携带**引导内核**（`tool/stub_kernel/main.dart`：纯 dart:ui
+画说明页，冷编 ~85ms/<200MB —— 本容器唯一可编内核）。
+
+在任意 ≥1GB 空闲内存的机器（或配额恢复后的 CI）产出真实内核后，
+对已签 APK 做**单文件热换**：
+
+```bash
+# 1) 正常机器：flutter assemble ... -dTargetFile=lib/main.dart
+#    （或 flutter build apk --debug 取其 kernel_blob.bin）
+# 2) 热换（无需重编/重打包整 APK）：
+python3 - << 'EOF'
+import zipfile
+# 用新 kernel_blob.bin 原地替换 APK 内 assets/flutter_assets/kernel_blob.bin
+EOF
+zipalign -p -f 4 in.apk out.apk && apksigner sign --ks <ks> out.apk
+```
+
+热换不触碰 dex/资源/原生库 —— 插件注册表（GeneratedPluginRegistrant）
+已编入 classes.dex，真实内核启动即经 embedding 反射注册
+lusicgal/engines 通道；stub→real 仅差 kernel_blob.bin 一个文件。
+调试引擎（libflutter.so debug 版 + isolate_snapshot_data + JIT）与
+JIT 语义下 kernel_blob 即全量业务逻辑，无 AOT 快照耦合。
+
+## 本地（可选，CI 均已覆盖；手工 APK 管线见上）
 
 ```bash
 flutter pub get
@@ -67,8 +126,8 @@ bash scripts/rust_local_check.sh                  # host + aarch64-android 双�
 
 实证结论（本仓库代码面）：桥/ONS/xsystem35 全链可产 arm64 真产物；Rust 四壳
 独立检查全绿；Rust 全量上游编译（wgpu 系单 crate 编译峰值）超内存上限
-（历史实证 400MB；现行用户上限已收紧为 **300MB**，见下），
-不可行 —— 四壳上游交叉编译仍以 CI rust-cores 矩阵为准。
+（历史实证 400MB；现行用户上限为 **550MB**，见上），四壳上游交叉编译
+以 CI rust-cores 矩阵为准。
 
 ## 引擎核心构建（v2 核心分发模型）
 
@@ -115,37 +174,36 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 ## 本地验证 harness（无 Flutter 工具链也可跑）
 
 纯 Dart 逻辑（检测器 / 条目模型）与 Web hook（JS）可在无 Flutter/Android SDK
-的环境直接验证 —— 容器内存约束下可行（现行上限 **300MB**；历史 400MB
-实证记录保留）：
+的环境直接验证 —— 容器内存约束下可行（现行看护 **550MB**；2026-10-17
+实测 import_flow 10/10、detector 15/15、gameentry 6/6 全绿）：
 
 ```bash
 # Dart SDK 任意 ≥3.x（dart-sdk/bin 在 PATH）
-dart tool/detector_harness_check.dart    # 检测器新规则 + 回归（20 项）
+dart tool/detector_harness_check.dart    # 检测器新规则 + 回归（15 项）
 dart tool/gameentry_harness_check.dart   # GameEntry options 序列化往返（6 项）
 dart --packages=/tmp/alt_packages.json \
-  tool/import_flow_harness_check.dart    # 导入流 13 项（PC 原位/挑 exe/
-                                         # PSP 入库/应用条目/核心回归）
+  tool/import_flow_harness_check.dart    # 导入流 10 项（目录入沙盒/tyrano
+                                         # web 入库/散装 xp3/纯 exe 原样退回）
 node plugins/lusicgal_engines/android/src/main/assets/lg_web_boot.js  # 语法检查
 # node 冒烟（音频生命周期 / 按键合成 / Tyrano 存档桥）见 ENGINE_NOTES
 ```
 
 - **import_flow harness 的 foundation 桩**：LibraryStore imports
   `package:flutter/foundation.dart`（传递依赖 dart:ui，纯 VM 编不动）
-  → 最小桩（ChangeNotifier / protected / visibleForTesting 三符号，
-  /tmp/fbstub）+ 替换包表（/tmp/alt_packages.json）。该 harness 已抓
-  两个真 bug：const 构造含字符串插值（CI analyze 必红）与子目录 exe
-  双重前缀 —— 真源码级验证的价值实证。
+  → 最小桩（ChangeNotifier / protected / visibleForTesting，
+  入仓于 `tool/fbstub/`）+ 替换包表（/tmp/alt_packages.json 指向它）。
 
 - harness 直跑真实源码（`lib/core/…` 相对导入），非副本；`tool/**`
   已排除静态分析（print/exit 汇报）。
-- **flutter 工具链为容器边界（2026-10-16 实证，300MB 现行上限）**：
-  - flutter 3.47.7 stable 可装可用（工具自身峰 RSS ≈ 97MB；pub get 绿）；
-  - `flutter analyze`：LSP 分析服务器交换完 capabilities 后峰值超 400MB
-    看护被杀（-9）——全包图（含 flutter 框架闭包）撑不下；
-  - `flutter test`：frontend 编译器（tool 82MB + compiler）47 秒被
-    cgroup OOM 击杀（"The Dart compiler exited unexpectedly"），无看护
-    直跑同结果 —— 与 Rust wgpu 系同类资源边界，非遗漏；
+- **flutter 工具链为容器边界（2026-10-16/17 实证，550MB 看护）**：
+  - flutter 3.47.7 stable 可装可用（pub get 绿；assemble 引导内核 85ms 绿）；
+  - `flutter analyze`：LSP 分析服务器交换完 capabilities 后峰值超看护
+    被杀（-9）—— 全包图（含 flutter 框架闭包）撑不下；
+  - app.dill 冷编（frontend_server）：550MB 看护与裸跑均被 cgroup OOM
+    （memory.events oom_kill 累计 11）；工具强注 registrant 无法剥离；
+  - gradle/AGP 管线：daemon（435MB）+ includeBuild Kotlin 编译超
+    cgroup 余量（~520MB）—— 手工窄工具管线（见上）替代；
   - 检测器/条目逻辑以纯 Dart harness 等价覆盖（同批断言）；Kotlin 侧
-    以 kotlinc（JDK17 + android-34 + embedding jar）全量编译绿 +
+    以 kotlinc（JDK17 + android.jar + embedding jar，280m heap）全量编译绿 +
     WebServer/Asar JVM 功能实测 17/17 替代。CI 恢复后 flutter
     analyze/test 归 app job。

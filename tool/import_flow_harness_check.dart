@@ -1,5 +1,6 @@
-// 导入流 harness：PC 原位条目 / 自动挑 exe / PSP 入库 / 应用条目
-//（经 flutter pub get 的 package_config 直跑真源码；用后保留为本地验证项）。
+// 导入流 harness：目录导入搬移沙盒 / Web 工程识别入库 / 封包导入
+//（经 flutter pub get 的 package_config 直跑真源码；foundation 走最小桩，
+// 见 tool/gen_alt_packages.py —— 外板条目已按用户指令移除）。
 import 'dart:io';
 import '../lib/core/library/import_service.dart';
 import '../lib/core/library/library_store.dart';
@@ -18,68 +19,48 @@ Future<void> main() async {
     await store.load();
     final import = ImportService(store: store, importRoots: [tmp]);
 
-    // ---- PC 原位导入（目录含 MZ 魔数 exe；不带 .pac —— 现实 PC 目录）----
-    final pcDir = Directory('${tmp.path}/pcgame');
-    await Directory('${pcDir.path}/bin').create(recursive: true);
-    final exe = File('${pcDir.path}/bin/Game.exe');
-    await exe.writeAsBytes([0x4D, 0x5A, 0x90, 0x00]);
-    await File('${pcDir.path}/game.dat').writeAsBytes([1, 2, 3]);
-
-    final r1 = await import.importDirectory(pcDir);
-    check('PC 自动识别 → pcwinlator', r1.imported && r1.engine == EngineId.pcwinlator);
-    check('PC 原位：目录未被搬动', pcDir.existsSync() && exe.existsSync());
-    final entry1 = store.byId(r1.gameId ?? '');
-    check('PC 条目 path=原位目录', entry1?.path == pcDir.path);
-    check('PC 自动挑 exe（子目录）', entry1?.engineDetail == 'bin/Game.exe');
-
-    // ---- addPcEntryInPlace：顶层 exe 偏好 ----
-    final pc2 = Directory('${tmp.path}/pc2');
-    await pc2.create();
-    await File('${pc2.path}/start.exe').writeAsBytes([0x4D, 0x5A]);
-    await File('${pc2.path}/other.exe').writeAsBytes([0x4D, 0x5A]);
-    final r2 = await import.addPcEntryInPlace(dir: pc2);
-    check('in-place 顶层 exe（偏好 start）',
-        r2.imported && r2.engineDetail == 'start.exe');
-    check('in-place 不复制', pc2.existsSync() &&
-        store.byId(r2.gameId ?? '')?.path == pc2.path);
-
-    // ---- addPcEntryInPlace：无 exe 报错 ----
-    final pc3 = Directory('${tmp.path}/pc3');
-    await pc3.create();
-    final r3 = await import.addPcEntryInPlace(dir: pc3);
-    check('无 exe → 报错不导入', !r3.imported && (r3.error?.contains('.exe') ?? false));
-
-    // ---- PSP 入库（复制进沙盒）----
-    final isoBytes = List<int>.filled(0x8010, 0);
-    for (var i = 0; i < 5; i++) {
-      isoBytes[0x8001 + i] = 'CD001'.codeUnitAt(i);
-    }
-    final srcIso = File('${tmp.path}/umdgame.iso');
-    await srcIso.writeAsBytes(isoBytes);
-    final r4 = await import.importPspFile(srcIso);
-    check('PSP 识别入库', r4.imported && r4.engine == EngineId.psp);
-    final entry4 = store.byId(r4.gameId ?? '');
-    check('PSP path=沙盒文件（≠原位）',
-        entry4 != null && entry4.path != srcIso.path &&
-            entry4.path.startsWith('${tmp.path}/games/'));
-    check('PSP 目标文件存在', File(entry4?.path ?? 'x').existsSync());
-
-    // ---- 应用条目 ----
-    final r5 = await import.addAppEntry(packageName: 'com.demo.game', label: '演示');
-    check('应用条目 path=包名',
-        r5.imported && store.byId(r5.gameId ?? '')?.path == 'com.demo.game');
-    check('应用条目标题', store.byId(r5.gameId ?? '')?.title == '演示');
-
-    // ---- 常规引擎仍走搬移（回归）----
+    // ---- 核心引擎目录：搬入沙盒 ----
     final krkr = Directory('${tmp.path}/krkrgame');
     await krkr.create();
     await File('${krkr.path}/data.xp3')
         .writeAsBytes([0x58, 0x50, 0x33, 0x0D, 0x0A, 0x1A, 0x8A, 0, 0, 0, 0]);
-    final r6 = await import.importDirectory(krkr);
-    check('回归：核心引擎仍搬入沙盒',
-        r6.imported && r6.engine == EngineId.kirikiri &&
-            !krkr.existsSync() &&
-            store.byId(r6.gameId ?? '')?.path.startsWith('${tmp.path}/games/') == true);
+    final r1 = await import.importDirectory(krkr);
+    check('KRKR 识别入库', r1.imported && r1.engine == EngineId.kirikiri);
+    check('搬入沙盒（源目录消失）', !krkr.existsSync());
+    final e1 = store.byId(r1.gameId ?? '');
+    check('path=沙盒目录', e1 != null &&
+        e1.path.startsWith('${tmp.path}/games/') &&
+        File('${e1.path}/data.xp3').existsSync());
+
+    // ---- Web 工程（Tyrano）：搬入沙盒 + 可直接游玩形态 ----
+    final ty = Directory('${tmp.path}/tyranogame');
+    await Directory('${ty.path}/data').create(recursive: true);
+    await File('${ty.path}/index.html').writeAsString('<html><head></head></html>');
+    await File('${ty.path}/tyrano.js').writeAsString('//tyrano');
+    await File('${ty.path}/data/system/Config.tjs').create(recursive: true);
+    final r2 = await import.importDirectory(ty);
+    check('Tyrano 识别入库', r2.imported && r2.engine == EngineId.tyrano);
+    final e2 = store.byId(r2.gameId ?? '');
+    check('Web 条目 path=沙盒目录（WebView 直读）', e2 != null &&
+        e2.path.startsWith('${tmp.path}/games/') &&
+        File('${e2.path}/index.html').existsSync());
+    check('isWebGame 形态（App 内直接游玩）', e2!.engine.isWebGame && e2.engine.isOutboard);
+
+    // ---- 封包导入（.xp3 单文件建目录）----
+    final src = File('${tmp.path}/loose.xp3');
+    await src.writeAsBytes([0x58, 0x50, 0x33, 0x0D, 0x0A, 0x1A, 0x8A, 0, 0, 0, 0]);
+    final r3 = await import.importFiles([src], title: '散装封包');
+    check('封包导入识别', r3.imported && r3.engine == EngineId.kirikiri);
+    check('封包入库（源文件保留）', src.existsSync() &&
+        store.byId(r3.gameId ?? '')!.path.startsWith('${tmp.path}/games/'));
+
+    // ---- 未识别目录：不导入、不搬动 ----
+    final unk = Directory('${tmp.path}/junkdir');
+    await unk.create();
+    await File('${unk.path}/Game.exe').writeAsBytes([0x4D, 0x5A, 0x90, 0x00]);
+    final r4 = await import.importDirectory(unk);
+    check('纯 exe 目录不识别（PC 条目已移除）', !r4.imported);
+    check('未识别目录原地不动', unk.existsSync());
   } finally {
     await tmp.delete(recursive: true);
   }

@@ -27,25 +27,25 @@ Future<void> main() async {
   // 新格式：options 持久化往返。
   final e = GameEntry(
     id: 'g2',
-    title: 'PC 条目',
-    engine: EngineId.pcwinlator,
-    engineDetail: 'Game.exe',
+    title: '条目级参数',
+    engine: EngineId.siglus,
+    engineDetail: 'RealLive',
     path: '/data/games/g2',
     addedAt: DateTime.parse('2026-10-15T00:00:00.000'),
     options: {
-      'container_id': 3,
-      'graphics_driver': 'turnip,zink',
-      'screen_size': '1600x900',
+      'volume': 80,
+      'fontScale': 1.25,
+      'fullscreen': true,
     },
   );
   final json = e.toJson().map((k, v) => MapEntry<Object?, Object?>(k, v));
   final back = GameEntry.fromJson(json);
   check('options 往返（3 键）', back.options.length == 3 &&
-      back.options['container_id'] == 3 &&
-      back.options['graphics_driver'] == 'turnip,zink' &&
-      back.options['screen_size'] == '1600x900');
-  check('engineDetail 往返', back.engineDetail == 'Game.exe');
-  check('engine 往返', back.engine == EngineId.pcwinlator);
+      back.options['volume'] == 80 &&
+      back.options['fontScale'] == 1.25 &&
+      back.options['fullscreen'] == true);
+  check('engineDetail 往返', back.engineDetail == 'RealLive');
+  check('engine 往返', back.engine == EngineId.siglus);
 
   // 空 options 不写键（老存储干净）。
   final noOpt = GameEntry(
@@ -54,9 +54,10 @@ Future<void> main() async {
   );
   check('空 options 不入 JSON', !noOpt.toJson().containsKey('options'));
 
-  // path 语义文档一致性（形态 → 字段注释）。
-  check('psp 条目 path=文件 / androidapp path=包名（注释约束）',
-      EngineId.psp.isExternalLauncher && EngineId.androidapp.isExternalLauncher);
+  // 引擎形态（外板条目已移除，用户指令）。
+  check('全部形态：8 核心 + 3 Web，无外板',
+      EngineId.values.where((e) => e.isCore).length == 8 &&
+      EngineId.values.where((e) => e.isWebGame).length == 3);
 
   print('\npassed=$passed failed=$failed');
   exit(failed == 0 ? 0 : 1);

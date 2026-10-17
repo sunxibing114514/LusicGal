@@ -54,37 +54,29 @@
 - **事件流**：核心线程 → C `emit_event` → JNI `AttachCurrentThread` → 主 Handler → `EventChannel` 推送 `log/state/exit/core_missing`（+ art3m1s 的 `artemis_log/artemis_media/artemis_ui`）。
 - **PlatformView**：creationParams `{engineId, gameId}`；Android `EngineSurfaceView`（SurfaceView → `attachSurface`+`surfaceSize`），iOS v1 占位面（真实 Metal/CAMetalLayer 接线见 ROADMAP）。
 
-### 3.1 条目模型：三种引擎形态（2026-10 扩展）
+### 3.1 条目模型：两种引擎形态（2026-10 收敛，11 引擎）
 
-`EngineId` 注册表承载全部条目，形态三分（`isCore` / `isWebGame` /
-`isExternalLauncher`；`isOutboard` = renpy + 后两者统一播放器让位）：
+`EngineId` 注册表承载全部条目，形态二分（`isCore` / `isWebGame`；
+`isOutboard` = renpy + webGame 统一"播放器让位"语义）：
 
 | 形态 | 引擎 | 路径语义 | 启动路径 |
 |---|---|---|---|
 | ABI 核心（8） | kirikiri…artemis | 游戏目录 | 桥 dlsym → `engine_start` |
 | Web 跑法（3） | tyrano / rpgmv / rpgmz | 游戏目录（或含 app.asar） | `WebGameActivity`：本地 HTTP（127.0.0.1）+ index.html 注入 `lg_web_boot.js` → WebView 全屏；MV/MZ 叠虚拟手柄（KeyboardEvent 合成） |
-| 外板启动条目（3） | psp / pcwinlator / androidapp | 镜像文件 / 游戏目录（**原位引用**，engineDetail=exe）/ 包名 | `ExternalLaunchers`：PPSSPP 显式 Intent（ACTION_VIEW+GRANT）／winlator-cn ExternalLaunchActivity extras 协议／`getLaunchIntentForPackage` |
 
-**跨应用可读性两铁律**（2026-10-16 实证补强）：
-- PPSSPP / Winlator 以独立 UID 运行，读不到本应用私有目录（Android
-  11+ FUSE 强制）。PSP 镜像入库沙盒后，经 `LusicgalGamesProvider`
-  （FileProvider 同款形态：exported=false + grantUriPermissions）
-  自动转 content:// + FLAG_GRANT_READ 临时授权；公共存储原位文件
-  仍走 file://。
-- Winlator 协议吃本机路径（非 URI），无 content:// 可转 → PC 条目
-  一律**原位引用**（`importDirectory` 识别 pcwinlator 即不搬沙盒；
-  `addPcEntryInPlace` + 「PC 游戏目录」选择器走公共存储）。目录若
-  在私有区，启动侧 `DIR_NOT_SHARED` 守卫给出迁移指引。
+> **用户指令移除（2026-10）**：外板启动条目 psp / pcwinlator /
+> androidapp（外部应用 Intent 协议、原位引用、GamesProvider）整体移除
+> ——全部 11 引擎均为**应用内直接可玩**，无任何"跳转外部应用"条目。
+> 相应的 `ExternalLaunchers.kt` / `LusicgalGamesProvider.kt` /
+> 导入入口（PSP 镜像、PC 目录、应用包名）一并删除。
 
-- **探测语义**：核心 → dlsym；Web → 恒可用（WebView 内置）；外板 →
-  外部应用安装状态（UI 先行给出安装指引）。
-- **GameEntry.options**：条目级启动参数（winlator 覆盖参数、应用条目
-  dataUri 等），`EngineHost.launchGame` 与全局设置合并后下发；
-  path 的形态语义见 `game_entry.dart` 字段注释。
+- **探测语义**：核心 → dlsym；Web → 恒可用（WebView 内置）。
+- **GameEntry.options**：条目级启动参数，`EngineHost.launchGame` 与
+  全局设置合并后下发；path 的形态语义见 `game_entry.dart` 字段注释
+  （统一：游戏目录入沙盒 Documents `games/<id>/`）。
 - **iOS 源码位对齐**：Web 三引擎 iOS 侧为 `WebGameViewController`
   （WKWebView `loadFileURL` 免本地服务器 + WKUserScript 注入同一
-  `lg_web_boot.js`，经 podspec resource_bundles 打包）；psp/pcwinlator/
-  androidapp 于 iOS probe 恒不可用（依赖 Android 外部应用）。
+  `lg_web_boot.js`，经 podspec resource_bundles 打包）。
 
 ## 4. C ABI（native/include/lusicgal/engine_abi.h，v2 = 0x00020000）
 

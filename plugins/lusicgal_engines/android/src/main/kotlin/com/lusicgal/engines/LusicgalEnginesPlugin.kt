@@ -91,11 +91,6 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "command" -> handleCommand(call, result)
             "pushInput" -> handlePushInput(call, result)
             "surfaceSize" -> handleSurfaceSize(call, result)
-            "listLaunchableApps" -> {
-                val ctx = context
-                if (ctx == null) result.success(mapOf("apps" to emptyList<Map<String, Any>>()))
-                else result.success(mapOf("apps" to ExternalLaunchers.listLaunchableApps(ctx)))
-            }
             else -> result.notImplemented()
         }
     }
@@ -154,47 +149,6 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 result.success(mapOf("ok" to true, "message" to null))
             } catch (t: Throwable) {
                 result.success(mapOf("ok" to false, "errorCode" to "LAUNCH_FAILED", "message" to "${t.message}"))
-            }
-            return
-        }
-
-        // ---- 外板启动平台条目（PSP / PC / 安装的应用）----
-        val appContext = context
-        if (engineId == "psp" || engineId == "pcwinlator" || engineId == "androidapp") {
-            if (appContext == null) {
-                result.success(mapOf("ok" to false, "errorCode" to "BAD_STATE", "message" to "无应用上下文"))
-                return
-            }
-            val code: String? = when (engineId) {
-                "psp" -> ExternalLaunchers.launchPsp(appContext, gamePath)
-                "pcwinlator" -> {
-                    val exe = options["exePath"] as? String
-                    if (exe.isNullOrBlank()) {
-                        "EXE_NOT_SPECIFIED"
-                    } else {
-                        ExternalLaunchers.launchWinlator(
-                            appContext, gamePath, exe, gameId, options
-                        )
-                    }
-                }
-                else -> ExternalLaunchers.launchAppEntry(
-                    appContext, gamePath, options["dataUri"] as? String
-                )
-            }
-            if (code == null) {
-                result.success(mapOf("ok" to true, "message" to null))
-            } else {
-                val message = when (code) {
-                    "PPSSPP_NOT_INSTALLED" -> "PPSSPP 未安装（org.ppsspp.ppsspp）——请在应用市场安装后重试"
-                    "PPSSPP_ENTRY_MISSING" -> "PPSSPP 无 PpssppActivity 入口（改版不兼容），请换官方版"
-                    "PACKAGE_NOT_INSTALLED" -> "winlator-cn 未安装（com.winlator）"
-                    "EXTERNAL_LAUNCH_UNSUPPORTED" -> "当前 Winlator 缺少 ExternalLaunchActivity（需 winlator-cn 1005+）"
-                    "EXE_NOT_SPECIFIED" -> "PC 条目缺少 exe 路径（engineDetail）"
-                    "DIR_NOT_SHARED" -> "游戏目录在本应用私有目录内，Winlator 无法读取——请把游戏移动到公共存储（如 /storage/emulated/0/Games/）后经「PC 游戏目录」重新导入"
-                    "APP_NOT_INSTALLED", "APP_NOT_LAUNCHABLE" -> "目标应用不可启动（可能已卸载）"
-                    else -> "外板启动失败：$code"
-                }
-                result.success(mapOf("ok" to false, "errorCode" to code, "message" to message))
             }
             return
         }
@@ -334,9 +288,7 @@ object EngineHost {
         "kirikiri", "onscripter", "renpy", "siglus",
         "rfvp", "sena", "xsystem35", "artemis",
         // Web 引擎（内置 WebView 跑法）。
-        "tyrano", "rpgmv", "rpgmz",
-        // 外板启动平台条目。
-        "psp", "pcwinlator", "androidapp"
+        "tyrano", "rpgmv", "rpgmz"
     )
 
     @Volatile
@@ -411,41 +363,6 @@ object EngineHost {
                 "version" to "webview",
                 "message" to null
             )
-        }
-        // 外板启动条目：可用性 = 外部应用安装状态。
-        when (engineId) {
-            "psp" -> {
-                val installed = appContext?.let { ExternalLaunchers.isPpssppInstalled(it) } == true
-                return mapOf(
-                    "engineId" to engineId,
-                    "available" to installed,
-                    "version" to if (installed) "ppsspp" else null,
-                    "message" to if (installed) null else "PPSSPP 未安装（该条目经 org.ppsspp.ppsspp 启动）"
-                )
-            }
-            "pcwinlator" -> {
-                val installed = appContext?.let { ExternalLaunchers.isWinlatorInstalled(it) } == true
-                val supported = installed && appContext?.let {
-                    ExternalLaunchers.isExternalLaunchSupported(it)
-                } == true
-                return mapOf(
-                    "engineId" to engineId,
-                    "available" to supported,
-                    "version" to if (supported) "winlator-cn" else null,
-                    "message" to when {
-                        !installed -> "winlator-cn 未安装（com.winlator 1005+）"
-                        else -> "当前 Winlator 缺少 ExternalLaunchActivity 外置入口"
-                    }
-                )
-            }
-            "androidapp" -> {
-                return mapOf(
-                    "engineId" to engineId,
-                    "available" to true,
-                    "version" to "app-entry",
-                    "message" to null
-                )
-            }
         }
         if (!ensureBridge()) {
             return unavailable(engineId, "桥库 liblusicgal_bridge.so 未打包（该 ABI 未构建）")

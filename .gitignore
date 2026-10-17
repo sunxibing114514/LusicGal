@@ -27,3 +27,6 @@ build/
 .DS_Store
 Thumbs.db
 Cargo.lock
+
+# 容器内无关外来目录（含私有凭据，严禁入库）
+/netease-checkin/

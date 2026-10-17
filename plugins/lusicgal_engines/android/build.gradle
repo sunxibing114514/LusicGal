@@ -17,6 +17,8 @@ android {
 
     defaultConfig {
         minSdk = 21
+        // NDK 版本钉死（本地/CI 环境一致；AGP 9.x 默认 NDK 未必安装）。
+        ndkVersion = '27.2.12479018'
         // 桥（liblusicgal_bridge.so）只构建 64 位 + 模拟器 ABI；
         // 其余 ABI 下 App 优雅降级（探测报告核心缺失）。
         ndk {

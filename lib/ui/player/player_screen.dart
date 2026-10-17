@@ -208,7 +208,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
                   ),
                 ),
               ),
-            // 外板启动失败（如 PPSSPP/winlator-cn 未安装）：非核心问题，
+            // 启动失败（如 WebGameActivity 异常）：非核心缺失问题，
             // 单独提示（不套用"核心未打包"文案）。
             if (_launched && !_coreMissing && _message != null)
               Positioned(

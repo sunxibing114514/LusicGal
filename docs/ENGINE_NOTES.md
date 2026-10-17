@@ -320,76 +320,33 @@ buildtree 生成、10 个港口（7zip/vulkan-headers/spirv-headers 等）安装
 - **虚拟手柄**：rpgmv/rpgmz 条目叠加原生按钮层（方向/确认/取消），
   经 evaluateJavascript 合成事件 —— MV/MZ 的键盘交互映射到触屏。
 
-### 外板启动条目（psp / pcwinlator / androidapp）
+### ~~外板启动条目（psp / pcwinlator / androidapp）~~ —— 已移除（2026-10 用户指令）
 
-- **psp**：条目 path = 镜像文件（iso/cso/pbp/chd，导入优先 rename）。
-  启动 = `ACTION_VIEW(*/*)` + 显式组件
-  `org.ppsspp.ppsspp/.PpssppActivity` + GRANT 读写 flags（协议移植
-  YukiHub）；未安装 → errorCode PPSSPP_NOT_INSTALLED，UI 提示安装。
-  识别：ISO9660 `CD001`@0x8001 / CSO `CISO` / PBP `\0PBP` 魔数。
-- **pcwinlator**：条目 path = 游戏目录，engineDetail = exe 相对路径
-  （导入时 `pickLauncherExe` 自动挑：名含 game/start/launch 优先）。
-  启动 = winlator-cn 外置启动协议（`com.winlator/.ExternalLaunchActivity`，
-  extras：dir_path/exe_path/confirm=false/launch_id；options 可带
-  container_id/container_name/graphics_driver/dxwrapper/screen_size/
-  lc_all 覆盖）—— 协议来自 winlator-cn 官方 external-launch-guide。
-  识别：目录内 MZ 魔数 exe（权重克制 +6，让位 xp3/rpa 等核心证据）。
-- **androidapp**：条目 path = 包名（导入面板"应用条目"列出可启动应用）。
-  启动 = `getLaunchIntentForPackage`（GameHub 快捷方式同归此类）。
-- **探测语义**：probe 对外板条目 = 外部应用安装状态（psp→PPSSPP、
-  pcwinlator→winlator-cn 1005+ ExternalLaunchActivity），UI 可先给出
-  安装指引；web 引擎恒可用（WebView 内置）。
+> **整体删除**：PSP（PPSSPP Intent）/ PC（winlator-cn extras）/
+> Android 应用条目三形态连同 ExternalLaunchers.kt、GamesProvider、
+> 文件级检测（ISO/CSO/PBP/MZ-exe 魔数）、三通道导入、DIR_NOT_SHARED
+> 守卫一并移除 —— 全部 11 引擎应用内直接可玩，无外部跳转。
+> 历史协议考据与接线清单见 git 历史（提交 0a7a27e 及此前）；本节
+> 保留章节标题仅作变更索引。
 
-### 可用性缺口修补（2026-10-16，跨应用 UID 实证）
+### 探测语义（现行）
 
-外板协议接通 ≠ 条目可玩：PPSSPP/Winlator 以**独立 UID** 运行，
-Android 11+ FUSE 禁止跨应用读 `Android/data/<pkg>` 与 `/data/user/0`。
-- PSP：入库沙盒的镜像 PPSSPP 打不开（file:// 跨应用被拒）。修补 =
-  `LusicgalGamesProvider`（只读 ContentProvider，FileProvider 同款
-  形态）+ `launchPsp` 沙盒路径自动转 content://（PPSSPP 官方
-  file/content 双 scheme 支持）+ GRANT_READ 授权。
-- PC：winlator-cn 的 dir_path 吃**本机路径**（非 URI，无 content://
-  可转），私有目录必然挂载失败。修补 = PC 条目一律**原位引用**
-  （导入不复制；「PC 游戏目录」选择公共存储目录）+ 启动侧
-  `DIR_NOT_SHARED` 守卫（目录在私有区时给出迁移指引，不静默失败）。
-
-### 接线清单（本次落地文件）
-
-- `lib/core/models/engine_id.dart`：+6 id（isCore/isWebGame/
-  isExternalLauncher/isOutboard 形态标志）。
-- `lib/core/models/game_entry.dart`：+options（持久化 JSON；path 语义
-  按形态变化，见字段注释）。
-- `lib/core/detect/engine_detector.dart`：web/pc 证据块 + detectFile
-  （PSP 镜像魔数）。
-- `lib/core/library/import_service.dart`：importPspFile / addAppEntry /
-  pickLauncherExe（顶层优先 + 一层子目录兜底，名含 game/start/launch
-  偏好）；importDirectory 对 pcwinlator **原位引用**（不搬沙盒）+
-  `addPcEntryInPlace`（公共存储目录选择流程）。
-- `plugins/.../engines/ExternalLaunchers.kt`：三协议实现 + 应用清单 +
-  `isUnderAppSandbox` 守卫。
-- `plugins/.../engines/LusicgalGamesProvider.kt`：**新增**——只读
-  ContentProvider（FileProvider 同款形态），沙盒游戏文件以
-  content:// 授权外部应用（PSP 场景核心）。
-- `plugins/.../engines/web/{AsarArchive,LocalWebServer,WebGameActivity}.kt`
-  + assets `lg_web_boot.js` + Manifest activity + provider 声明。
-- `plugins/.../LusicgalEnginesPlugin.kt`：launch 三分支（web/外板）+
-  probe 新语义 + listLaunchableApps + DIR_NOT_SHARED 指引文案；
-  **修复预存隐患**：EngineHost 原引用类属性 context 不可见（Kotlin
-  object 无闭包可见性）→ 增 `EngineHost.appContext`（注入）。
+- 核心（8）：dlsym 探测（缺核心 = available=false, reason=core_missing）。
+- Web（3）：恒可用（WebView 内置）。
+- 纯 exe 目录：无证据 → unknown（`pickLauncherExe` 已删，exe 不再
+  构成引擎证据，目录原样退回）。
 - **iOS 源码位**（暂不构建，用户指令）：`WebGameViewController.swift`
   （WKWebView loadFileURL 免本地服务器 + WKUserScript 注入共用
-  lg_web_boot.js；podspec resource_bundles 打包该资产）；外板三 id
-  probe 恒不可用（依赖 Android 外部应用）。
-- `lib/ui/...`：import_sheet 三通道（PSP 镜像/应用条目/PC 游戏目录
-  + 路径语义说明）、player_screen
-  isOutboard 让位 + 外板错误卡、ui_helpers 图标、engine_host options
-  合并（条目级 exePath/dataUri/覆盖参数）。
+  lg_web_boot.js；podspec resource_bundles 打包该资产）。
+- `lib/ui/...`：import_sheet 单通道（目录导入）、player_screen
+  isOutboard 让位（仅 renpy + web）、ui_helpers 图标随 11 引擎收敛。
 
-### 边界与验证状态
+### 边界与验证状态（现行）
 
-- **本地验证边界**：Dart/无 Android SDK 与 Flutter 工具链 —— 本容器
-  无 dart/flutter（CI app job 为编译场域）；Kotlin/Java 同理由 CI gates
-  覆盖。逻辑一致性已按既有模式人工核对（renpy Route B 同构）。
+- **本地验证（2026-10-17，550MB 看护）**：kotlinc 全量编译插件
+  （280m heap 绿）；detector harness 15/15、gameentry 6/6、
+  import_flow 10/10（fbstub 替换包表）全绿；手工 APK 管线产出
+  签名 APK 402MB（见 docs/BUILD.md）。
 - **rfvp pin 709b6ba 不动**；Web 跑法不触碰任何原生核心。
 - **iOS 侧**：WebGameActivity 为 Android 实现；iOS 的 Web 跑法
   （WKWebView）留待恢复 iOS 构建时接入 —— 数据层已就绪（isWebGame）。
