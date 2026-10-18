@@ -264,6 +264,16 @@ DSH 沙箱）上完成闭环。沙箱约束与对策（全部实证）：
 （**419MB ≤ 550MB 上限**），105 条目，kernel_blob.bin = 55,943,464 B
 真内核，apksigner verify 通过。
 
+**引擎核心 .so 注入（`add_libs.js` + `strip_sigblock.js`）**：Linux 侧
+已编成的核心（onscripter 全家桶：SDL2/image/ttf/mixer、lua、bz2、
+onsyuri；xsystem35 全家桶：webp、sharpyuv；两核心共用 libc++_shared
+与一套 SDL2/mixer —— 取 xsystem35 构建，SDL2 soname ABI 兼容）以
+STORED 追加进 `lib/arm64-v8a/`；zip 手术要点：数据区与旧 CD 记录
+原样保留、新 CD = 旧记录 + 新记录、EOCD 的 size/offset 字段易写反
+（两次实测踩坑）；随后 `zipalign -p -f 4` + apksigner 重签。签名基座
+若只剩已签 APK，用 `strip_sigblock.js` 剥 v2/v3 块还原未签名态。
+终版 **420.0MB，118 条目，15 个 .so 全 STORED**，apksigner verify 通过。
+
 - **renpy 自建模块（open source 原生，非 web）**：renpy-build 需要
   bash + Linux NDK 工具链路径，Windows 无 WSL 不可本地原生复现；
   上游 pin（renpy-build@6121730 + renpy@80edccb）与 Linux 侧已完成的
