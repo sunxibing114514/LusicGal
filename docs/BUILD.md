@@ -1,10 +1,13 @@
 # BUILD — 构建 / 编译验证
 
-## CI（配额空窗期不可用；恢复后权威）
+## CI（权威；2026-10-18 起仓库转公有后恢复可用）
 
-仓库推送后由 GitHub Actions 验证。配额状态（2026-10-17）：私有仓库
-Actions 配额耗尽，run 创建后 runner 拒绝接入（steps=0）—— **CI 当前
-不可用**，本地已按下述手工管线补位实证；恢复后原流程生效。
+仓库推送后由 GitHub Actions 验证。配额历史（2026-10-17~18）：私有仓库
+Actions 配额耗尽，run 创建后 runner 拒绝接入（steps=0，本页"本地手工
+管线"即该空窗期的补位实证）。**2026-10-18 仓库转 public**（GPL 开源 +
+release 公开分发），标准 runner 免配额，engines.yml 四核矩阵恢复为
+Rust 核心权威产线；本地 Windows 仅保留 sena 一核实证产物与下述交叉
+编译配方（as-is 备档）。
 
 ### `.github/workflows/app.yml`
 
@@ -279,3 +282,56 @@ STORED 追加进 `lib/arm64-v8a/`；zip 手术要点：数据区与旧 CD 记录
   上游 pin（renpy-build@6121730 + renpy@80edccb）与 Linux 侧已完成的
   33 项任务记录见 `docs/ENGINE_NOTES.md` / ROADMAP；恢复路径为
   Linux/CI 环境（hostpython3.host 失败点续查）或装 WSL 后原样重放。
+
+## Windows Rust 核心交叉编译实录（2026-10-18；sena 成、其余转 CI）
+
+目标：无 rustup/VS/MSYS 安装器、schannel 被掐、管道 stdio 被禁的
+DSH 沙箱里，从官方 dist 组件手工组装 Rust 交叉编译环境（x86_64-pc-windows-gnu
+宿主 → aarch64-linux-android）。**sena 核心全绿**（619KB
+`liblusicgal_sena.so`）；wgpu 系大 crate（naga/ash/siglus_scene_vm）
+实测撞物理内存承诺上限（见尾），其余三核转 CI。
+
+- **工具链组装**（rustup 全家不可用：`rustup-init` 注册表访问被拒 +
+  schannel 下载静默卡死）：rsproxy.cn/dist 拉官方 tar 组件
+  `rustc + rust-std(host) + rust-std(aarch64-linux-android) + cargo +
+  rust-mingw`，按 `<ver>/<component>/` 两层目录解到
+  `.toolchain/rust/`，host std 并入 `rustc/lib/rustlib/…`。
+- **宿主链接**（build script/proc-macro 单元）：无 MinGW 安装器 ——
+  `rust-lld`（rustc 自带）+ msys2 TUNA 镜像抽包（`mingw-w64-ucrt-x86_64-
+  {crt,winpthreads,gcc}` 的 .a/.o 原样拷进 rustlib `…/lib/self-contained/`；
+  **gcc 包才有真 libgcc/libgcc_eh（_Unwind_* 符号），空壳 stub 无效**）。
+  rustc 默认宿主链接器名 `x86_64-w64-mingw32-gcc` → **NDK clang.exe 硬链
+  改名顶替** + `CCC_OVERRIDE_OPTIONS="^--target=x86_64-w64-mingw32
+  ^-L<self-contained>"`（分隔符是空格；`^`=前插；android 包装脚本自带
+  --target 后插胜出，不受污染——cc-rs 探测的 CC 除外）。dlltool 硬链
+  自 llvm-dlltool（windows-sys build 在 gnu target_env 下必调）。
+- **android 链接**：`-L` 泄漏会毒化 android 链接（拾到 mingw
+  libm/liblog）→ 自制 `.toolchain/ndkwrap/aarch64-linux-android26-clang.cmd`
+  先 `set "CCC_OVERRIDE_OPTIONS="` 再调真 NDK 包装；API26 而非 24
+  （cpal/oboe 需 libaaudio）。RUSTFLAGS 保持为空：它不进宿主单元、且
+  `-C link-self-contained` 在 android 目标被拒。
+- **cargo 注册表**：cargo 走 schannel 必死 → `tool/apk_pipeline/
+  lg_cargo_proxy.js` 本地 HTTP 桥（:9999）：sparse 索引透传
+  rsproxy.cn/index，crate 下载走 `…/api/v1/crates/…/download`，
+  `config.json` 的 dl 改指回本桥；`CARGO_HOME/config.toml` 里
+  `[source.crates-io] replace-with="lg-sparse"`。
+- **bat/cmd 必须 CRLF**（LF 会被 cmd 逐行错切）；`.toolchain/rustenv.bat`
+  承载上述全部环境。
+- **`-j 1` 必须**：naga 并行编译即异常退出。
+- **实证内存天花板（决定性）**：本机 1.9GB RAM + **768MB 固定页文件**
+  （AutomaticManagedPagefile=False，改配要重启，不可行）。Rust 线程栈
+  Windows 上整块一次 commit，rustc 按 CGU 起工作线程；wgpu 系大
+  crate 编 LLVM 峰值即触 `ERROR_COMMITMENT_LIMIT(1455)`
+  （"页面文件太小"）→ 表现为 `failed to spawn work thread` ICE 或
+  无诊断 0xc0000409（fastfail，勿被名字 STATUS_STACK_BUFFER_OVERRUN
+  误导——非栈溢出）。已排除并实测无效的路径：RUST_MIN_STACK=64MB
+  （反而加速撞顶，降到 8MB）、opt-level=1+codegen-units=1+incremental=0
+  （naga 仍 "Allocation failed"）、rustc PE 主线程栈预留 2MB→512MB
+  补丁（`tool/apk_pipeline/patch_rustc_stack.js`，排除主线程栈疑点）、
+  rustc 1.88/1.90 降版（其 std 临时目录走 GetTempPath2W→系统上下文
+  固定解析 C:\Windows\SystemTemp，沙箱拒访，1.99.1 恰好不涉）。
+  **结论：该配置下 wgpu 系核心本地不可编，sena（619KB）是实际上限；
+  rfvp/siglus/artemis 以 CI rust-cores 矩阵为产线。**
+- **磁盘纪律**：页文件随内存压力吃盘（ENOSDC 反复出现）——每个核心
+  harvest 后删 `target/`，NDK 只留 arm64 sysroot，删 sources/ 与
+  shader-tools/simpleperf，cargo 注册表缓存保留（后续构建复用）。

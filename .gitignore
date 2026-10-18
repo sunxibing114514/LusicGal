@@ -36,3 +36,7 @@ Cargo.lock
 
 # Windows PowerShell 模块分析缓存（HOME 重定向下的产物）
 /Microsoft/
+
+# Rust 构建产物与 cargo 本地镜像缓存（.toolchain/cargo-home 之外的）
+target/
+/tool/apk_pipeline/cargo-mirror/

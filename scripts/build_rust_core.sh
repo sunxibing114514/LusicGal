@@ -32,7 +32,9 @@ fi
 [ -n "$NDK" ] && [ -d "$NDK" ] || { echo "✗ 未找到 Android NDK"; exit 2; }
 
 TARGET="${ANDROID_TARGET:-aarch64-linux-android}"
-API="${ANDROID_API:-24}"
+# API26（Android 8）而非 24：cpal/oboe 音频栈链接 -laudio/-laaudio，
+# 两者在 API24 sysroot 缺失（本地实测 "unable to find library -laaudio"）。
+API="${ANDROID_API:-26}"
 PREBUILT="$NDK/toolchains/llvm/prebuilt/linux-x86_64"
 if [ ! -d "$PREBUILT" ]; then
   PREBUILT="$(dirname "$(dirname "$(find "$NDK/toolchains/llvm" -name clang -type f | head -1)")")"
