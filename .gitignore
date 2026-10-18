@@ -30,3 +30,9 @@ Cargo.lock
 
 # 容器内无关外来目录（含私有凭据，严禁入库）
 /netease-checkin/
+
+# Windows 本地工具链（SDK/NDK/JDK/pub-cache，可重下，不入库；重建流程见 docs/BUILD.md）
+/.toolchain/
+
+# Windows PowerShell 模块分析缓存（HOME 重定向下的产物）
+/Microsoft/

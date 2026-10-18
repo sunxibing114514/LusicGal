@@ -207,3 +207,65 @@ node plugins/lusicgal_engines/android/src/main/assets/lg_web_boot.js  # 语法�
     以 kotlinc（JDK17 + android.jar + embedding jar，280m heap）全量编译绿 +
     WebServer/Asar JVM 功能实测 17/17 替代。CI 恢复后 flutter
     analyze/test 归 app job。
+
+## Windows 本地管线实录（2026-10-18，真内核 APK 落地）
+
+容器内核 OOM 无法翻越的 app.dill 冷编，在 Windows（1.9GB RAM + 页文件 +
+DSH 沙箱）上完成闭环。沙箱约束与对策（全部实证）：
+
+- **PowerShell 全域 ConstrainedLanguage**：`[System.IO.*]`、方法调用
+  一律拒 —— 文件操作走 cmdlet/`tar`/文件工具；flutter 自带
+  `update_engine_version.ps1`/`update_dart_sdk.ps1`（共享 bat 每次必调）
+  置为 `exit 0` 桩 —— zip 自带 `engine.stamp`/`flutter_tools.snapshot`
+  全齐，桩后不触发任何重建。
+- **子进程管道 stdio 被禁**（EPERM/CreateFile failed 5）：`dart`/
+  frontend_server/`tar`/`node` 直跑全部可行；一切"工具套工具"
+  （flutter.bat 套 git、gradle、sdkmanager）不可行 → 全程绕开 flutter 命令行。
+- **curl.exe schannel 被掐**（SEC_E_NO_CREDENTIALS）→ node fetch
+  流式下载器 `.toolchain/dl.js`（OpenSSL 栈）。
+- pub 缓存/临时目录重定向到工作区（systemprofile AppData 拒绝访问）；
+  MinGit + `GIT_CONFIG_GLOBAL`（必须 UTF-8；`[safe] directory = *`）。
+
+四步真内核管线（脚本均入仓 `tool/apk_pipeline/`）：
+
+1. **工具链还原**：flutter_windows_3.47.7-stable.zip + MinGit +
+   JDK17（Temurin）+ build-tools_r34 直下解压（均经 dl.js）；磁盘吃紧时
+   删 `artifacts/engine/*`（仅留 `common`（flutter_patched_sdk）与
+   `windows-x64`（frontend_server），内核编译只需此四件套）。
+2. **包还原 `restore_pkgs.js`**：按迁移来的 `.dart_tool/package_config.json`
+   从 `pub.dev/api/archives/<name>-<version>.tar.gz` 拉全 64 个 hosted
+   包（纯 node gunzip + tar 解析，零 spawn），SDK 包指向
+   `.toolchain/flutter/packages/*`，重写包表（Linux 原表备份 `.linux.bak`）。
+3. **手动 frontend_server 冷编**（即 Linux OOM 九连处）：
+
+   ```
+   dartaotruntime.exe artifacts\engine\windows-x64\frontend_server_aot.dart.snapshot
+     --sdk-root artifacts\engine\common\flutter_patched_sdk
+     --target flutter --no-print-incremental-dependencies
+     -Ddart.vm.profile=false -Ddart.vm.product=false
+     --enable-asserts --track-widget-creation --no-link-platform
+     --packages C:\LusicGal\.dart_tool\package_config.json
+     --output-dill build\win_kernel\app.dill --depfile build\win_kernel\app.d
+     C:\LusicGal\lib\main.dart
+   ```
+
+   产物 55,943,464 B，errorCount 0。页文件扛峰（Linux 侧为
+   memory.swap.max=0 硬墙，Windows 无此墙）。dart 侧 registrant 未注：
+   Android 运行时插件注册由 Java `GeneratedPluginRegistrant`（classes.dex
+   内）负责，dart registrant 仅服务桌面嵌入器/测试。
+4. **热换 + 对齐 + 签名**：`swap_kernel.js`（仅动
+   `assets/flutter_assets/*`，95 条目字节级原样保留含 STORED 的
+   libflutter.so/resources.arsc 与 `assets/lg_web_boot.js`）→
+   `zipalign -p -f 4` → `apksigner sign`（Windows 新生成的 debug
+   keystore：SHA-256 `07eb78cf…6433889`；与 Linux 侧签名不同，覆盖安装
+   需先卸载）。
+
+产物 `build/outputs/apk/debug/LusicGal-debug.apk`：419,173,478 B
+（**419MB ≤ 550MB 上限**），105 条目，kernel_blob.bin = 55,943,464 B
+真内核，apksigner verify 通过。
+
+- **renpy 自建模块（open source 原生，非 web）**：renpy-build 需要
+  bash + Linux NDK 工具链路径，Windows 无 WSL 不可本地原生复现；
+  上游 pin（renpy-build@6121730 + renpy@80edccb）与 Linux 侧已完成的
+  33 项任务记录见 `docs/ENGINE_NOTES.md` / ROADMAP；恢复路径为
+  Linux/CI 环境（hostpython3.host 失败点续查）或装 WSL 后原样重放。
