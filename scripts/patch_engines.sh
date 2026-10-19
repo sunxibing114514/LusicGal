@@ -143,6 +143,30 @@ ANCHOR = """    krkrlive2d.cpp
 REPLACEMENT = """    # krkrlive2d.cpp  # LUSICGAL_NO_CUBISM_SRC（Cubism 源未 vendor）
 """
 '
+# 摘掉 krkrlive2d.cpp 后的两处残引用（CI 实证链接期 undefined symbol）：
+# krkrgles.cpp:42 的 extern → 本文件内 static 空置定义（fbo=0，1429 行
+# else-if 分支恒不触）；engine_api.cpp:56/201 的空锚声明+调用 → 删。
+patch_file kirikiri-next "cpp/plugins/krkrgles.cpp" \
+  'LUSICGAL_NO_LIVE2D_GLES_REF' '
+ANCHOR = """extern Live2DRenderTarget g_live2dRenderTarget;"""
+REPLACEMENT = """// LUSICGAL_NO_LIVE2D_GLES_REF：krkrlive2d.cpp 未入构建（Cubism 源
+// 未 vendor）—— 原跨文件符号改为本文件空置定义（fbo=0 恒空）。
+static Live2DRenderTarget g_live2dRenderTarget{};"""
+'
+patch_file kirikiri-next "bridge/engine_api/src/engine_api.cpp" \
+  'LUSICGAL_NO_LIVE2D_API_ANCHOR_DECL' '
+ANCHOR = """extern "C" void TVPRegisterKrkrGLESPluginAnchor();
+extern "C" void TVPRegisterKrkrLive2DPluginAnchor();"""
+REPLACEMENT = """extern "C" void TVPRegisterKrkrGLESPluginAnchor();
+// LUSICGAL_NO_LIVE2D_API_ANCHOR_DECL：krkrlive2d.cpp 未入构建。"""
+'
+patch_file kirikiri-next "bridge/engine_api/src/engine_api.cpp" \
+  'LUSICGAL_NO_LIVE2D_API_ANCHOR_CALL' '
+ANCHOR = """  TVPRegisterKrkrGLESPluginAnchor();
+  TVPRegisterKrkrLive2DPluginAnchor();"""
+REPLACEMENT = """  TVPRegisterKrkrGLESPluginAnchor();
+  // LUSICGAL_NO_LIVE2D_API_ANCHOR_CALL：上游锚为空函数，删除无害。"""
+'
 patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_TARGET' '
 ANCHOR = """add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})"""
