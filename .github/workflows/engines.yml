@@ -180,10 +180,11 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - name: fetch upstream（renpy-build + renpy 运行时树）
+      - name: fetch upstream（renpy-build + renpy 运行时树 + kirikiri 的 Cubism 头）
         run: |
           bash scripts/fetch_engines.sh renpy-build
           bash scripts/fetch_engines.sh renpy
+          bash scripts/fetch_engines.sh kirikiri-next
       - name: stage 模块（librenpython.so + Java + 运行时资产）
         run: bash modules/renpy/build_android.sh
       - uses: actions/upload-artifact@v4

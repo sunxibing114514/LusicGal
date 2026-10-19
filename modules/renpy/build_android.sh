@@ -70,6 +70,24 @@ else
   find "$NDKUN" -maxdepth 7 -name 'clang*' 2>/dev/null | head -10
 fi
 
+# renpy/gl2/live2dmodel.pyx 编译期 #include "Live2DCubismCore.h"（运行时
+# 经 SDL_LoadObject 动态载入 Core —— live2dcsm.c 实读，无链接期依赖）。
+# renpy-build 的 live2d 任务要求 tars/CubismSdkForNative-5-r.5.zip（本仓
+# 不 vendor 官方 SDK），但缺 zip 时静默跳过 → 只补头文件：用 kirikiri 上
+# 游树内 vendored 的 Core 头布进全部三态 install 目录
+# （context.py 实读：host/cross.android-arm64_v8a/install.android-arm64_v8a）。
+KRKR_HDR="$ROOT/third_party/upstream/kirikiri-next/cpp/plugins/cubism/Core/include/Live2DCubismCore.h"
+if [ -f "$KRKR_HDR" ]; then
+  for d in "$RB/tmp/host" "$RB/tmp/cross.android-arm64_v8a" \
+           "$RB/tmp/install.android-arm64_v8a"; do
+    mkdir -p "$d/cubism/Core/include"
+    cp "$KRKR_HDR" "$d/cubism/Core/include/Live2DCubismCore.h"
+  done
+  echo "  Live2DCubismCore.h → 三态 install（编译期头，运行时 dlopen）"
+else
+  echo "  ⚠ 缺 kirikiri 树内 Cubism 头（fetch kirikiri-next 后重试）"
+fi
+
 ( cd "$RB" && ./build.sh --platform android --arch arm64_v8a --stop renpython )
 
 echo "== [2/4] 定位产物 =="
