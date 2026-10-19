@@ -172,6 +172,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: install host deps（ccache：renpybuild host CC 约定 "ccache clang-22 -fuse-ld=lld"；nasm/yasm 保险）
+        run: sudo apt-get update -q && sudo apt-get install -y -q ccache nasm yasm
       - name: install uv（renpy-build @6121730 的 build.sh 依赖）
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
