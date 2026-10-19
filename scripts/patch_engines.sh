@@ -177,6 +177,59 @@ REPLACEMENT = """if(EXISTS "${CUBISM_CORE_LIB}")
 endif()"""
 '
 
+# INTERFACE 目标上 PUBLIC/PRIVATE 一律被 CMake 拒（"may only set INTERFACE
+# properties on INTERFACE targets"，CI 实证 81/85/101 三处）—— 对目标类型
+# 逐语句条件化（锚避开注释行，不引撇号）。
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_INC1' '
+ANCHOR = """target_include_directories(CubismFramework PUBLIC
+    ${CUBISM_FW_DIR}
+    ${CUBISM_CORE_DIR}/include
+)"""
+REPLACEMENT = """get_target_property(_LG_CUBISM_TYPE CubismFramework TYPE)
+if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+    target_include_directories(CubismFramework INTERFACE
+        ${CUBISM_FW_DIR}
+        ${CUBISM_CORE_DIR}/include
+    )
+else()
+    target_include_directories(CubismFramework PUBLIC
+        ${CUBISM_FW_DIR}
+        ${CUBISM_CORE_DIR}/include
+    )
+endif()"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_DEF' '
+ANCHOR = """target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)"""
+REPLACEMENT = """if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+    target_compile_definitions(CubismFramework INTERFACE CSM_TARGET_ANGLE_ES2)
+else()
+    target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)
+endif()"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_INC2' '
+ANCHOR = """        target_include_directories(CubismFramework PRIVATE ${_EGL_INCS})"""
+REPLACEMENT = """        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+            target_include_directories(CubismFramework INTERFACE ${_EGL_INCS})
+        else()
+            target_include_directories(CubismFramework PRIVATE ${_EGL_INCS})
+        endif()"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_INC3' '
+ANCHOR = """        target_include_directories(CubismFramework PRIVATE
+            ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)"""
+REPLACEMENT = """        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+            target_include_directories(CubismFramework INTERFACE
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
+        else()
+            target_include_directories(CubismFramework PRIVATE
+                ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
+        endif()"""
+'
+
 # ---- KrKr2-Next：导出 C setter（宿主注入 JVM/Context/窗口）-----------------
 # 原实现只有 Kotlin 类绑定的 JNI 命名 setter（org.github.krkr2...），
 # LusicGal 不复用其 Flutter 插件 —— 注入经本补丁新增的纯 C 入口。

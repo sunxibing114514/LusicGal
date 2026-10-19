@@ -34,6 +34,16 @@ if [ ! -f "$RB/renpy/renpy/main.py" ]; then
   ln -s "$RENPY" "$RB/renpy"
   echo "  linked $RB/renpy -> $RENPY"
 fi
+
+# renpy-build 的 toolchain 任务直接 `unzip tars/android-ndk-r29-linux.zip`
+# （不自己下载 NDK）—— 先把 zip 备进 tars/（CI 实证缺它必死）。
+NDKZIP="$RB/tars/android-ndk-r29-linux.zip"
+if [ ! -f "$NDKZIP" ]; then
+  mkdir -p "$RB/tars"
+  echo "  downloading android-ndk-r29-linux.zip → tars/（~700MB）"
+  curl -L --fail -o "$NDKZIP" https://dl.google.com/android/repository/android-ndk-r29-linux.zip
+fi
+
 ( cd "$RB" && ./build.sh --platform android --arch arm64_v8a --stop renpython )
 
 echo "== [2/4] 定位产物 =="
