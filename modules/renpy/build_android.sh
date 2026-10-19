@@ -44,23 +44,30 @@ if [ ! -f "$NDKZIP" ]; then
   curl -L --fail -o "$NDKZIP" https://dl.google.com/android/repository/android-ndk-r29-linux.zip
 fi
 
-# renpybuild host CC 约定 "ccache clang-22 -fuse-ld=lld"（Ubuntu LLVM 版本化
-# 名）—— NDK bin 里只有裸名 clang。预解包（toolchain 任务同目录）并布
-# clang-22 符号链接 + PATH 注入（CI 实证 nasm.host 死于 "C compiler cannot
-# create executables"）。
+# renpybuild llvm() 的约定（run.py:42 实读）：CC=ccache clang-22、
+# CXX=clang++-22、AR=llvm-ar-22 …（Ubuntu LLVM 版本化名，suffix="-22"），
+# PATH 直接继承 build.sh 进程环境 —— NDK bin 只有裸名。预解包后全套
+# 布符号链接 + PATH 注入（CI 实证 nasm.host 死于 "C compiler cannot
+# create executables"；早前 -type f 漏掉符号链接形态的 bin/clang）。
 NDKUN="$RB/tmp/cross.android"
-if [ ! -d "$NDKUN/toolchains" ]; then
+if [ ! -d "$NDKUN/toolchains" ] && [ ! -d "$NDKUN/android-ndk-r29/toolchains" ]; then
   mkdir -p "$NDKUN"
   ( cd "$NDKUN" && unzip -q "$NDKZIP" )
 fi
-# 真工具链 bin = 含裸名 clang 可执行文件的那个（早前 find 误抓
-# lib/clang/21/bin 资源目录 —— CI 实证）。
-CLANG_BIN="$(find "$NDKUN" -type f -path '*/prebuilt/*/bin/clang' | head -1 || true)"
+CLANG_BIN="$(find "$NDKUN" \( -type f -o -type l \) -path '*/prebuilt/*/bin/clang' 2>/dev/null | head -1 || true)"
+[ -z "$CLANG_BIN" ] && CLANG_BIN="$(find "$NDKUN" \( -type f -o -type l \) -name clang 2>/dev/null | grep -E '/bin/clang$' | head -1 || true)"
 if [ -n "$CLANG_BIN" ]; then
   NDKBIN="$(dirname "$CLANG_BIN")"
-  [ -e "$NDKBIN/clang-22" ] || ln -s clang "$NDKBIN/clang-22"
+  for tool in clang clang++ llvm-ar llvm-ranlib llvm-strip llvm-nm \
+              llvm-readelf llvm-install-name-tool; do
+    [ -e "$NDKBIN/$tool" ] && [ ! -e "$NDKBIN/$tool-22" ] && \
+      ln -s "$tool" "$NDKBIN/$tool-22"
+  done
   export PATH="$NDKBIN:$PATH"
-  echo "  clang-22 → $NDKBIN/clang-22（PATH 注入）"
+  echo "  llvm-22 套件 → $NDKBIN（PATH 注入）"
+else
+  echo "  ⚠ 未定位 NDK clang（find 输出如下，供诊断）"
+  find "$NDKUN" -maxdepth 7 -name 'clang*' 2>/dev/null | head -10
 fi
 
 ( cd "$RB" && ./build.sh --platform android --arch arm64_v8a --stop renpython )
