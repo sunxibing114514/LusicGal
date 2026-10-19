@@ -15,7 +15,10 @@ plugins {
 }
 
 android {
-    namespace = "com.lusicgal.renpy"
+    // namespace 决定 R/BuildConfig 生成包。AGP 8 非传递 R：库代码只能看到
+    // 本 namespace 的 R —— rapt Java（org.renpy.android.RenPyFileProvider
+    // 引裸 R）因此跟 namespace 对齐（自研 Activity 用 FQN，不受影响）。
+    namespace = "org.renpy.android"
     compileSdk = 36
 
     defaultConfig {
