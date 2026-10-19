@@ -11,9 +11,10 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
   const h = { Authorization: `Bearer ${token}`, 'User-Agent': 'lg', Accept: 'application/vnd.github+json' };
   let run = null;
+  const wantEvent = process.env.POLL_EVENT || '';
   while (Date.now() < deadline) {
-    const runs = await (await fetch(`https://api.github.com/repos/${repo}/actions/workflows/engines.yml/runs?per_page=5`, { headers: h })).json();
-    run = (runs.workflow_runs || []).find(r => r.head_sha.startsWith(sha));
+    const runs = await (await fetch(`https://api.github.com/repos/${repo}/actions/workflows/engines.yml/runs?per_page=8`, { headers: h })).json();
+    run = (runs.workflow_runs || []).find(r => r.head_sha.startsWith(sha) && (!wantEvent || r.event === wantEvent));
     if (run) break;
     console.log('等待 engines run 出现…');
     await sleep(interval);

@@ -129,6 +129,54 @@ if matches rfvp; then
   echo "OK   patch(rfvp) YukiHub 生产补丁集完成（3 实改 + 2 护栏）"
 fi
 
+# ---- KrKr2-Next：CubismFramework 摘除（Live2D SDK 源/预编译库未 vendor）----
+# 上游树里 cpp/plugins/cubism/ 仅有 Core/include 头文件；Framework 源与
+# Core/lib/android 预编译 .a 均不在 → 空 GLOB 让 CMake Generate 死在
+# "No SOURCES given to target: CubismFramework"（CI 实证）。摘法：
+# 插件源表去掉 krkrlive2d.cpp；CubismFramework 无源时降级 INTERFACE 目标
+# （INTERFACE 目标上 PRIVATE link 不合法 → 两处改 INTERFACE；缺失的
+# libLive2DCubismCore.a 用 EXISTS 守卫）。
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_SRC' '
+ANCHOR = """    krkrlive2d.cpp
+"""
+REPLACEMENT = """    # krkrlive2d.cpp  # LUSICGAL_NO_CUBISM_SRC（Cubism 源未 vendor）
+"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_TARGET' '
+ANCHOR = """add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})"""
+REPLACEMENT = """if(CUBISM_FW_SOURCES)
+    add_library(CubismFramework STATIC ${CUBISM_FW_SOURCES})
+else()
+    # LUSICGAL_NO_CUBISM_TARGET：cubism/Framework 源不在树里
+    add_library(CubismFramework INTERFACE)
+endif()"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_ANGLE' '
+ANCHOR = """    target_link_libraries(CubismFramework PRIVATE
+        unofficial::angle::libEGL
+        unofficial::angle::libGLESv2
+    )"""
+REPLACEMENT = """    target_link_libraries(CubismFramework INTERFACE
+        unofficial::angle::libEGL
+        unofficial::angle::libGLESv2
+    )"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_EGL' '
+ANCHOR = """    target_link_libraries(CubismFramework PRIVATE EGL GLESv2)"""
+REPLACEMENT = """    target_link_libraries(CubismFramework INTERFACE EGL GLESv2)"""
+'
+patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
+  'LUSICGAL_NO_CUBISM_CORELIB' '
+ANCHOR = """target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})"""
+REPLACEMENT = """if(EXISTS "${CUBISM_CORE_LIB}")
+    target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})
+endif()"""
+'
+
 # ---- KrKr2-Next：导出 C setter（宿主注入 JVM/Context/窗口）-----------------
 # 原实现只有 Kotlin 类绑定的 JNI 命名 setter（org.github.krkr2...），
 # LusicGal 不复用其 Flutter 插件 —— 注入经本补丁新增的纯 C 入口。
