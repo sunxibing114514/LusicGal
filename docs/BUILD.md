@@ -163,8 +163,15 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 
 ## 全量 APK（CI 一杆过，推荐产线）
 
-`app.yml :: 全量 APK` job（手动 workflow_dispatch）在单个 runner 上串起
-全部引擎 + Flutter 壳 + Gradle 原生合并，直接产出 **11 引擎完整 APK**：
+`full-apk.yml`（2026-10-19 从 app.yml 迁出独立工作流）在单个 runner 上串起
+全部引擎 + Flutter 壳 + Gradle 原生合并，直接产出 **11 引擎完整 APK**。
+双触发：
+
+- `workflow_dispatch`：手动。
+- **`git push tag v*`：tag 即产线 —— 全绿后 job 内 GITHUB_TOKEN 自动
+  建 release 并上传 APK（发布零外部令牌依赖；api.github.com 认证面
+  长波 401 时 git/Actions 通道仍正常，round-8 即走此路发布
+  `v0.1.1-full-core`，152.22MB，25 步全绿）**。
 
 - Rust 四核（sena/rfvp/siglus/artemis）→ `build/cores/`
 - C++ 三核（xsystem35 / kirikiri×vcpkg / onscripter）→ `build/cores/`
