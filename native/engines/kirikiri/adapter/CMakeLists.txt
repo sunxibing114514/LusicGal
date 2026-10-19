@@ -58,10 +58,10 @@ set(BUILD_TOOLS OFF CACHE BOOL "" FORCE)
 # KrKr2-Next 根 CMake（Android 分支：VCPKG_TARGET_ANDROID → arm64-android 三元组）
 add_subdirectory(${KRKR2_DIR} krkr2)
 
-# LusicGal 适配器。
+# LusicGal 适配器（ANativeWindow_* 在 libandroid —— CI 实证链接期缺）。
 add_library(lusicgal_kirikiri SHARED lg_kirikiri.cpp)
 set_target_properties(lusicgal_kirikiri PROPERTIES OUTPUT_NAME lusicgal_kirikiri)
 target_include_directories(lusicgal_kirikiri PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/../../../../native/include
   ${KRKR2_DIR}/bridge/engine_api/include)
-target_link_libraries(lusicgal_kirikiri PRIVATE engine_api log)
+target_link_libraries(lusicgal_kirikiri PRIVATE engine_api log android)
