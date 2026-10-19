@@ -173,6 +173,15 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 - renpy 模块 staging（`modules/renpy/build-out/.ready`）→ `:module-renpy`
   经 patch_platform.py 并入（manifest 合并 + dex + librenpython.so + 资产；
   namespace=org.renpy.android 对齐 rapt 裸 R 引用）
+- **org.libsdl.app 类集唯一提供方 = 插件**（round-8 起模块不再自带
+  SDL Java 副本，否则 :app:mergeDexRelease 报 defined multiple times）：
+  插件内为 SDL3 3.4.8 android-project 全套 11 文件 + SDL2 音频兼容面
+  （SDLAudioManager 合并 2.26.3 `(IIII)[I` / 2.32.10 `(IIIII)[I` 双
+  audioOpen 签名；SDLActivity 增内嵌核心注入静态 nativeSurface/appContext）；
+  :module-renpy 经 `implementation project(':lusicgal_engines')` 编译引用。
+  可行性：SDL2 `register_methods` 签名不匹配仅告警不致命
+  （SDL_android.c:506-513），C 实现为可 dlsym 符号 → `nativeSetupJNI()V`
+  单一声明同时服务 SDL3（renpy）与 SDL2（onscripter/xsystem35）两族。
 - 汇核心 `build/cores/*/arm64-v8a/*.so` → `build/jniLibs/arm64-v8a/` →
   插件 Gradle `jniLibs.srcDir`（patch_platform.patch_engine_cores 注入）
 - `flutter build apk --release` → 产物 artifact `lusicgal-full-apk`
