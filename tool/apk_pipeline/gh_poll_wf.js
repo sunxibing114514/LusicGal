@@ -16,11 +16,14 @@ if (!sha) { console.error('用法: node gh_poll_wf.js <sha7> [intervalSec] [maxM
   let seen = 0;
   while (Date.now() < deadline) {
     let run = null;
+    const wantEvent = process.env.POLL_EVENT || '';
     for (let page = 1; page <= 3 && !run; page++) {
       const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${wf}/runs?per_page=50&page=${page}`, {
         headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'lg' },
       }).then(x => x.json());
-      run = (r.workflow_runs || []).find(x => x.head_sha.startsWith(sha)) || null;
+      const cand = (r.workflow_runs || []).filter(x => x.head_sha.startsWith(sha)
+        && (!wantEvent || x.event === wantEvent));
+      run = cand[0] || null;
     }
     if (!run) { console.log(`等待 ${wf} run 出现…`); await new Promise(z => setTimeout(z, interval * 1000)); continue; }
     const j = await fetch(`https://api.github.com/repos/${repo}/actions/runs/${run.id}/jobs?per_page=50`, {

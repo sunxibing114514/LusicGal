@@ -19,5 +19,12 @@
             android:launchMode="singleTask"
             android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"/>
+        <!-- PythonSDLActivity 的 getUriForFile(<pkg>.fileprovider) 用
+             （rapt 原清单同形；manifest merger 解析 ${applicationId}）。 -->
+        <provider
+            android:name="org.renpy.android.RenPyFileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true"/>
     </application>
 </manifest>

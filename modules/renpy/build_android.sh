@@ -110,6 +110,17 @@ RAPT_JAVA="$RB/rapt/prototype/renpyandroid/src/main/java"
   && tar cf - --exclude='./org/libsdl' --exclude='./org/jnius' . ) \
   | tar xf - -C "$OUT/java/rapt"
 
+# rapt res：RenPyFileProvider 引 R.xml.file_paths —— 不随带 res 则模块
+# 无 R 包，javac "package R does not exist"（CI 实证）。
+RAPT_RES="$RB/rapt/prototype/renpyandroid/src/main/res"
+if [ -d "$RAPT_RES/xml" ]; then
+  mkdir -p "$OUT/res/xml"
+  cp -R "$RAPT_RES/xml/." "$OUT/res/xml/"
+  echo "  rapt res/xml staged"
+else
+  echo "⚠ 未找到 rapt res/xml（RenPyFileProvider 会编译失败）"
+fi
+
 resolve_link() {
   # $1=符号链接路径；输出解析后的绝对路径（存在则目录校验通过）。
   [ -L "$1" ] || return 1

@@ -183,7 +183,8 @@ ANCHOR = """    target_link_libraries(CubismFramework PRIVATE
         unofficial::angle::libEGL
         unofficial::angle::libGLESv2
     )"""
-REPLACEMENT = """    target_link_libraries(CubismFramework INTERFACE
+REPLACEMENT = """    # LUSICGAL_NO_CUBISM_ANGLE：INTERFACE 目标只吃 INTERFACE 链接。
+    target_link_libraries(CubismFramework INTERFACE
         unofficial::angle::libEGL
         unofficial::angle::libGLESv2
     )"""
@@ -191,12 +192,14 @@ REPLACEMENT = """    target_link_libraries(CubismFramework INTERFACE
 patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_EGL' '
 ANCHOR = """    target_link_libraries(CubismFramework PRIVATE EGL GLESv2)"""
-REPLACEMENT = """    target_link_libraries(CubismFramework INTERFACE EGL GLESv2)"""
+REPLACEMENT = """    # LUSICGAL_NO_CUBISM_EGL：同 ANGLE。
+    target_link_libraries(CubismFramework INTERFACE EGL GLESv2)"""
 '
 patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_CORELIB' '
 ANCHOR = """target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})"""
-REPLACEMENT = """if(EXISTS "${CUBISM_CORE_LIB}")
+REPLACEMENT = """# LUSICGAL_NO_CUBISM_CORELIB：Core 库未 vendor，EXISTS 守卫。
+if(EXISTS "${CUBISM_CORE_LIB}")
     target_link_libraries(CubismFramework PUBLIC ${CUBISM_CORE_LIB})
 endif()"""
 '

@@ -31,6 +31,7 @@ android {
                 'build-out/java/sdl',
             ]
             jniLibs.srcDirs = ['build-out/jniLibs']
+            res.srcDirs = ['src/main/res', 'build-out/res']
             assets.srcDirs = ['src/main/assets', 'build-out/assets']
         }
     }
