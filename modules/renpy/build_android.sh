@@ -44,6 +44,22 @@ if [ ! -f "$NDKZIP" ]; then
   curl -L --fail -o "$NDKZIP" https://dl.google.com/android/repository/android-ndk-r29-linux.zip
 fi
 
+# renpybuild host CC 约定 "ccache clang-22 -fuse-ld=lld"（Ubuntu LLVM 版本化
+# 名）—— NDK bin 里只有裸名 clang。预解包（toolchain 任务同目录）并布
+# clang-22 符号链接 + PATH 注入（CI 实证 nasm.host 死于 "C compiler cannot
+# create executables"）。
+NDKUN="$RB/tmp/cross.android"
+if [ ! -d "$NDKUN/toolchains" ]; then
+  mkdir -p "$NDKUN"
+  ( cd "$NDKUN" && unzip -q "$NDKZIP" )
+fi
+NDKBIN="$(find "$NDKUN" -type d -path '*llvm*' -name bin | head -1 || true)"
+if [ -n "$NDKBIN" ]; then
+  [ -e "$NDKBIN/clang-22" ] || ln -s clang "$NDKBIN/clang-22"
+  export PATH="$NDKBIN:$PATH"
+  echo "  clang-22 → $NDKBIN/clang-22（PATH 注入）"
+fi
+
 ( cd "$RB" && ./build.sh --platform android --arch arm64_v8a --stop renpython )
 
 echo "== [2/4] 定位产物 =="
