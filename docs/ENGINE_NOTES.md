@@ -228,7 +228,7 @@ Pinned commits（`scripts/fetch_engines.sh` 使用同一批 pin）：
   nativeSetupJNI + add/removeAudioDevice 三符号（缺一即整表注册失败）；
   audioOpen 双签名（2.26 `(IIII)[I` / 2.32 `(IIIII)[I`）+ 4 元素返回值；
   音频回调只依赖 mAudioManagerClass（无 SDLActivity 类也能工作）——
-  SdlCompat.kt 已按此实现并由 `ensureCore` 装载后引导。
+  插件 `org.libsdl.app` 合并类集（SDL3 全套 + SDL2 音频兼容面）已按此实现并由 `ensureCore` 装载后引导。
 
 ## 本地实构建实证记录（NDK r27c arm64，2026-10）
 

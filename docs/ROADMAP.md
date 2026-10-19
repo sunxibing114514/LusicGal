@@ -24,7 +24,7 @@
   - SoftPAL = sena-rs pal-vm（CPU 帧 + generation 变化检测 blit）
   - System 3.x = xsystem35-sdl2（`-gamedir` 前置 chdir 契约验证）
   - Artemis = art3m1s-core（`art3m1s_get_api_v1` 60 字段函数表）
-- ✅ **SDL2 真实音频**：`SdlCompat.kt` 完整移植 SDLAudioManager
+- ✅ **SDL2 真实音频**：`org.libsdl.app`（插件内 SDL3 全套 + SDL2 音频兼容面）完整实现 SDLAudioManager
   （AudioTrack 实时输出、2.26/2.32 双签名兼容、装载后 nativeSetupJNI 引导）
 - ✅ **平台条目引擎（引擎 8 → 14 → **11**，2026-10 用户指令收敛）**：
   - Web 跑法：**Tyrano**（TyranoScript/TyranoBuilder，含 app.asar
@@ -90,5 +90,5 @@ analyze/test/apk ④ Kotlin/Gradle 首次编译修复轮。
 | Kirikiri 移动编译链路 | KrKr2-Next `platforms/android`（NDK+vcpkg，`build_android.sh`）；`platforms/apple` 留作 iOS 恢复用 |
 | Ren'Py 移动构建（Xcode+Python 整合） | **Route B**：官方 renpy-build `librenpython.so` + rapt 链路重组（`modules/renpy/`），无需自建 Python 整合 |
 | Rust 引擎 FFI 对接 | `native/rust/shells/*` 四壳（MPL-2.0 上游）+ `lg_common`；契约已逐行核对 |
-| System35 SDL2 移动移植 | xsystem35-sdl2 + 与 ONS 共用 SDL 取窗/音频胶水（SdlCompat.kt） |
+| System35 SDL2 移动移植 | xsystem35-sdl2 + 与 ONS 共用 SDL 取窗/音频胶水（插件 org.libsdl.app 类集） |
 | 输入/音频/渲染统一抽象 | `engine_abi.h` v2（surface 注入 + JSON 输入/命令 + 事件回调），设计源自 AetherKiri `engine_api.h` |

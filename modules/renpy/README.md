@@ -11,7 +11,7 @@ SDL3 3.4.8 + Python 3.12 + ffmpeg 全静态）自带完整运行时与生命周�
 | rapt 官方语义 | 本模块的等价物 |
 |---|---|
 | `rapt/prototype/renpyandroid` Java（PythonSDLActivity/ResourceManager/AssetExtract…） | staging 原样拷贝（`build-out/java/rapt`） |
-| `libsdl` 符号链接 → SDL3 android-project Java | `build-out/java/sdl`（tmp 产物或符号链接解析） |
+| `libsdl` 符号链接 → SDL3 android-project Java | **插件统一提供**（`plugins/lusicgal_engines/android/src/main/java/org/libsdl/app`，SDL3 全套 + SDL2 音频兼容面；本模块 `implementation project(':lusicgal_engines')`。曾各自携带副本致 :app:mergeDexRelease 重复类，round-8 起唯一化） |
 | `librenpython.so`（tasks/renpython.py android 链接） | `build-out/jniLibs/arm64-v8a/` |
 | `private.mp3` tar（build.py::split_renpy → main.py + renpy/ 无 common） | 自行组装：`main.py`（本模块模板）+ renpy 仓 `renpy/` Python 树 |
 | `assets/x-renpy/x-common/**`（make_assets_tree 逐段 x- 前缀） | 自行组装：renpy 仓 `renpy/common/**` |

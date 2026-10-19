@@ -31,10 +31,10 @@ bash native/engines/onscripter/build_android.sh   # 需要 ANDROID_NDK_HOME
 `-r <game_dir> --save-dir <save_dir> --width/--height <options>`；
 输入 JSON → `SDL_PushEvent`（触摸→鼠标合成，键名→SDL keycode）；
 stop → `SDL_QUIT`。SDL 的 Java 侧生命周期由插件内
-`org.libsdl.app.SDLActivity/SDLAudioManager` 胶水承接
-（`SdlCompat.kt`）：SDLAudioManager 为 SDL2-2.32.10
-SDLAudioManager.java 的完整移植（audioOpen 双版本签名 2.26 `(IIII)[I`
-与 2.32 `(IIIII)[I`），`ensureCore` 装载核心后调用
+`org.libsdl.app`（SDL3 android-project 全套 + SDL2 音频兼容面，
+`plugins/lusicgal_engines/android/src/main/java/org/libsdl/app/`）
+承接：SDLAudioManager 合并了 2.26.3 `(IIII)[I` 与 2.32.10 `(IIIII)[I`
+双 audioOpen 签名及采集空实现，`ensureCore` 装载核心后调用
 `nativeSetupJNI()` 缓存 C 侧回调方法表 → AudioTrack 实时音频。
 采集（capture*）为安全空实现（ONS 不采集）。
 

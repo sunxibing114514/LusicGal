@@ -4,10 +4,13 @@
 # 产出（modules/renpy/build-out/，参与 App 构建的 drop-in）：
 #   java/rapt/**          rapt 的 renpyandroid Java（PythonSDLActivity/ResourceManager/
 #                         AssetExtract/…，真实文件，不含 libsdl 符号链接）
-#   java/sdl/**           SDL3 android-project Java（SDLActivity 等）
 #   jniLibs/arm64-v8a/librenpython.so
 #   assets/private.mp3    tar{ main.py + renpy/ Python 树（无 common）}
 #   assets/x-renpy/x-common/**   renpy/common/** 逐段 x- 前缀（loader 反向去前缀）
+#
+# org.libsdl.app Java 不在此 staging：由 plugins/lusicgal_engines 统一提供
+#（SDL3 android-project 全套 + SDL2 兼容音频面；round-8 前模块自带副本曾致
+#  :app:mergeDexRelease "defined multiple times"）。
 #
 # 依据（renpy-build @ 6121730 精读）：
 #   tasks/renpython.py android 链接产物 = librenpython.so（--stop renpython）
@@ -93,15 +96,15 @@ fi
 echo "== [2/4] 定位产物 =="
 LIBREN="$(find "$RB/tmp" -name 'librenpython.so' -path '*android*' -type f | head -1 || true)"
 [ -n "$LIBREN" ] || { echo "✗ 未找到 librenpython.so（build.sh --stop renpython 产物）"; exit 2; }
-SDL_JAVA="$(find "$RB/tmp" -type d -path '*SDL3*android-project/app/src/main/java' | head -1 || true)"
-[ -n "$SDL_JAVA" ] || SDL_JAVA="$(find "$RB/tmp" -type d -path '*SDL3-*/android-project/app/src/main/java' | head -1 || true)"
-[ -n "$SDL_JAVA" ] || { echo "✗ 未找到 SDL3 android Java（tmp/source/SDL3-*/android-project/...）"; exit 2; }
 echo "  librenpython: $LIBREN"
-echo "  SDL3 java:    $SDL_JAVA"
+# 注：org.libsdl.app Java 不再随本模块 staging —— 插件
+# plugins/lusicgal_engines 是唯一提供方（SDL3 android-project 全套 +
+# SDL2 兼容音频面，合并文件）。两处同 FQCN 会让 :app:mergeDexRelease
+# 报 "defined multiple times"（CI round-7 实证）。
 
 echo "== [3/4] staging =="
 rm -rf "$OUT"
-mkdir -p "$OUT/java/rapt" "$OUT/java/sdl" "$OUT/jniLibs/arm64-v8a" "$OUT/assets"
+mkdir -p "$OUT/java/rapt" "$OUT/jniLibs/arm64-v8a" "$OUT/assets"
 
 # rapt Java：真实文件。org/{libsdl,jnius} 是指向 renpy-build 构建产物的
 # 符号链接 —— 排除后单独解析（cp -L 遇失效链接会直接失败）。
@@ -142,13 +145,9 @@ else
   echo "⚠ 未找到 pyjnius Java（autoclass 受限）"
 fi
 
-# SDL android Java：优先 rapt 符号链接（上游意图），回退 tmp 里的 SDL3 源码树。
-SDL_RESOLVED="$(resolve_link "$RAPT_JAVA/org/libsdl" || true)"
-if [ -n "$SDL_RESOLVED" ]; then
-  SDL_JAVA="$SDL_RESOLVED"
-fi
-echo "  SDL java:   $SDL_JAVA"
-cp -R "$SDL_JAVA/." "$OUT/java/sdl/."
+# SDL org/libsdl Java：已并入插件（plugins/lusicgal_engines/android/src/main/
+# java/org/libsdl/app），本模块经 implementation project(':lusicgal_engines')
+# 编译引用 —— 不再本地 staging（round-8 修复）。
 
 cp "$LIBREN" "$OUT/jniLibs/arm64-v8a/librenpython.so"
 

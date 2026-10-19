@@ -6,10 +6,17 @@
 //
 // staging 产物（build-out/，全部 .gitignore）：
 //   java/rapt/**        ← rapt/prototype/renpyandroid 的真实 Java（含 PythonSDLActivity）
-//   java/sdl/**         ← SDL3-<ver>/android-project/app/src/main/java
 //   jniLibs/arm64-v8a/librenpython.so ← renpy-build --stop renpython 产物
 //   assets/private.mp3  ← tar{ main.py + renpy/ Python 树（无 common）}
 //   assets/x-renpy/x-common/** ← renpy/common/**（逐段 x- 前缀）
+//
+// org.libsdl.app Java（SDL3 android-project 全套 + SDL2 兼容音频面）统一由
+// plugins/lusicgal_engines 提供（唯一一份，避免 dex 重复类）：
+//   - rapt 的 PythonSDLActivity extends org.libsdl.app.SDLActivity 在
+//     本模块内编译，类型来自 :lusicgal_engines；
+//   - 内嵌 SDL2 核（onscripter/xsystem35）与 renpy（SDL3）共用该类集，
+//     SDL2 的 RegisterNatives 签名不匹配仅记警告不致命（SDL_android.c
+//     register_methods），音频经 GetStaticMethodID 按名+签名命中。
 plugins {
     id 'com.android.library'
 }
@@ -31,7 +38,6 @@ android {
             java.srcDirs = [
                 'src/main/java',
                 'build-out/java/rapt',
-                'build-out/java/sdl',
             ]
             jniLibs.srcDirs = ['build-out/jniLibs']
             res.srcDirs = ['src/main/res', 'build-out/res']
@@ -56,6 +62,8 @@ android {
 }
 
 dependencies {
+    // org.libsdl.app 类集（SDL3 全套 + SDL2 音频兼容面）唯一提供方。
+    implementation project(':lusicgal_engines')
     // 与 rapt/prototype/renpyandroid/build.gradle 的依赖面一致。
     api "com.google.android.play:asset-delivery:2.3.0"
     implementation 'com.google.android.play:age-signals:0.0.3'

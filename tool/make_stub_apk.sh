@@ -45,14 +45,17 @@ flutter assemble --no-version-check \
   -dAndroidArchs=android-arm64 -dMinSdkVersion=21 debug_android_application
 cd "$B"
 
-# ── ② 插件 Kotlin（含 web 运行页）─────────────────────────────────────────
-rm -rf ktl-out && mkdir ktl-out
+# ── ② 插件 Kotlin（含 web 运行页）+ SDL Java 集合 ─────────────────────────
+# SDL java（org.libsdl.app，SDL3 全套 + SDL2 音频兼容面）先经 javac 成
+# class（kotlinc 对命令行 .java 仅做解析不做编译产出，故分两步）。
+rm -rf jav-out ktl-out && mkdir jav-out ktl-out
+find "$ROOT"/plugins/lusicgal_engines/android/src/main/java -name '*.java' > jav-sources.txt
+javac -encoding UTF-8 -cp "$PLATFORM" -d jav-out @jav-sources.txt
 "${LG_KOTLINC:-/tmp/kotlinc/bin/kotlinc}" \
-  -cp "$PLATFORM:${LG_EMBEDDING_JAR:-/tmp/embedding.jar}" \
+  -cp "$PLATFORM:jav-out:${LG_EMBEDDING_JAR:-/tmp/embedding.jar}" \
   -d ktl-out \
   "$ROOT"/plugins/lusicgal_engines/android/src/main/kotlin/com/lusicgal/engines/*.kt \
-  "$ROOT"/plugins/lusicgal_engines/android/src/main/kotlin/com/lusicgal/engines/web/*.kt \
-  "$ROOT"/plugins/lusicgal_engines/android/src/main/kotlin/org/libsdl/app/SdlCompat.kt
+  "$ROOT"/plugins/lusicgal_engines/android/src/main/kotlin/com/lusicgal/engines/web/*.kt
 
 # ── ③ GeneratedPluginRegistrant（平时由 flutter gradle 插件生成）──────────
 mkdir -p genout gen
@@ -67,7 +70,7 @@ rm -rf dexout && mkdir dexout
 CJ="$(ls cjars/*.jar | tr '\n' ' ')"
 "$BT/d8" --release --min-api 21 --lib "$PLATFORM" --output dexout \
   "${LG_EMBEDDING_JAR:-/tmp/embedding.jar}" "${LG_KOTLINC:-/tmp/kotlinc}/lib/kotlin-stdlib.jar" \
-  $CJ $(find genout -name '*.class') $(find ktl-out -name '*.class')
+  $CJ $(find genout jav-out -name '*.class') $(find ktl-out -name '*.class')
 
 # ── ⑤ 资源（app res + 各 AAR res 分链：勿合并 values —— 节点级合并会被
 #      aapt2 静默弃置；分离编译 + 多 zip link 实证可靠）───────────────────────
