@@ -30,6 +30,14 @@
 // KrKr2-Next C ABI（源码树内精确头文件，构建脚本注入 -I）。
 #include "engine_api.h"
 
+// LusicGal 补丁新增的宿主注入入口（patch_engines.sh 在上游
+// platforms/android/cpp/krkr2_android.cpp 里以 extern "C" 定义；这里
+// 补声明 —— 它们不在 engine_api.h 内）。
+extern "C" {
+void krkr_SetAndroidContext(void *vm, void *context);
+void krkr_SetNativeWindow(void *win, uint32_t w, uint32_t h);
+}
+
 namespace {
 
 struct KrkrEngine {
