@@ -25,6 +25,15 @@ OUT="$ROOT/modules/renpy/build-out"
 [ -d "$RENPY" ] || { echo "✗ 缺 renpy 源码：scripts/fetch_engines.sh renpy"; exit 2; }
 
 echo "== [1/4] librenpython.so（renpy-build，Android arm64，重）=="
+# renpy-build 把 renpy 运行时树作为 git 子模块（$RB/renpy）引用；本仓库
+# 按 pin 分开浅拉（third_party/upstream/renpy）且不初始化子模块 —— 用
+# 软链拼回上游期望的布局（CI 实证：缺它时 uv 报 "Project directory
+# `renpy` does not exist"）。
+if [ ! -f "$RB/renpy/renpy/main.py" ]; then
+  rm -rf "$RB/renpy"
+  ln -s "$RENPY" "$RB/renpy"
+  echo "  linked $RB/renpy -> $RENPY"
+fi
 ( cd "$RB" && ./build.sh --platform android --arch arm64_v8a --stop renpython )
 
 echo "== [2/4] 定位产物 =="
