@@ -31,6 +31,7 @@ mkdir -p "$BUILD"
 # krkr2 根要求 CMake ≥3.28。
 cmake -G Ninja -S "$ROOT/native/engines/kirikiri/adapter" -B "$BUILD" \
   -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+  -DCMAKE_BUILD_TYPE=Release \
   -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
   -DANDROID_STL=c++_shared \
   -DKRKR2_DIR="$SRC" \
@@ -46,6 +47,17 @@ for lib in liblusicgal_kirikiri.so libengine_api.so libc++_shared.so; do
   found="$(find "$BUILD" -name "$lib" -type f | head -1 || true)"
   [ -n "$found" ] && cp "$found" "$DEST/" || echo "⚠ 未找到 $lib"
 done
+# Release+strip：静态 ANGLE/ffmpeg 全链接 .so 轻则上百分 MB——去调试段
+# 守 550MB APK 上限（llvm-strip 直接清 .so 的调试/符号表）。
+STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+if [ -x "$STRIP" ]; then
+  for so in "$DEST"/*.so; do
+    before="$(stat -c%s "$so")"
+    "$STRIP" --strip-unneeded "$so" 2>/dev/null || true
+    after="$(stat -c%s "$so")"
+    echo "  strip $so: $before → $after"
+  done
+fi
 # libc++_shared.so（ANDROID_STL=c++_shared）不在构建树 —— 从 NDK sysroot 取。
 if [ ! -f "$DEST/libc++_shared.so" ]; then
   STL="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so"

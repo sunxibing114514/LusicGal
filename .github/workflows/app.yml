@@ -77,3 +77,110 @@ jobs:
         # 13.x 文件选择器的 darwin 端走 Swift Package Manager/原生资产，
         # device 目标会触发签名检查；simulator 构建不涉及签名，编译验证等效。
         run: flutter build ios --debug --simulator
+
+  full-apk:
+    # 全量 APK：11 引擎一杆过（4 Rust 真核 + onscripter/xsystem35/kirikiri +
+    # renpy 模块 + 3 web），Flutter 应用构建原生并入（manifest 合并 / jniLibs /
+    # 资产）—— 取代 Windows 盒上的注入手术管线。手动触发（重：~2h、磁盘紧）。
+    name: 全量 APK（11 引擎真核 + 壳）— 手动触发
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/rust/shells/sena
+            native/rust/shells/rfvp
+            native/rust/shells/siglus
+            native/rust/shells/artemis
+      - name: locate NDK
+        run: |
+          NDK="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            echo "未找到 NDK"; exit 1
+          fi
+          echo "NDK_HOME=$NDK" >> "$GITHUB_ENV"
+      - name: fetch upstream 全引擎
+        run: |
+          bash scripts/fetch_engines.sh sena-rs        && bash scripts/patch_engines.sh sena
+          bash scripts/fetch_engines.sh rfvp           && bash scripts/patch_engines.sh rfvp
+          bash scripts/fetch_engines.sh siglus-rs      && bash scripts/patch_engines.sh siglus
+          bash scripts/fetch_engines.sh art3m1s-core   && (bash scripts/patch_engines.sh artemis || true)
+          bash scripts/fetch_engines.sh onscripter-yuri || echo "⚠ onscripter 上游拉取失败（走 release 兜底）"
+          bash scripts/fetch_engines.sh xsystem35-sdl2
+          bash scripts/fetch_engines.sh kirikiri-next  && bash scripts/patch_engines.sh kirikiri-next
+          bash scripts/fetch_engines.sh renpy-build
+          bash scripts/fetch_engines.sh renpy
+      - name: build Rust 四核（sena/rfvp/siglus/artemis）
+        run: |
+          for e in sena rfvp siglus artemis; do
+            bash "native/engines/$e/build_android.sh"
+          done
+      - name: build C++ 核心（xsystem35 / kirikiri / onscripter best-effort）
+        run: |
+          bash native/engines/xsystem35/build_android.sh
+          bash native/engines/kirikiri/build_android.sh
+          bash native/engines/onscripter/build_android.sh \
+            || echo "⚠ onscripter 构建失败（走 release 兜底）"
+      - name: onscripter 兜底（CI 拉不动上游 SDL 时，从上一版 release APK 抽核心）
+        if: ${{ !cancelled() }}
+        run: |
+          d=build/cores/onscripter/arm64-v8a
+          if [ ! -f "$d/liblusicgal_onscripter.so" ]; then
+            echo "onscripter 核心缺失 → 从 release v0.1.0-win-core 抽取"
+            mkdir -p "$d" /tmp/ons_apk
+            curl -L --fail -o /tmp/ons.apk \
+              https://github.com/sunxibing114514/LusicGal/releases/download/v0.1.0-win-core/LusicGal-debug.apk
+            unzip -o -j /tmp/ons.apk 'lib/arm64-v8a/liblusicgal_onscripter*.so' \
+              'lib/arm64-v8a/libonsyuri.so' 'lib/arm64-v8a/libSDL2*.so' \
+              'lib/arm64-v8a/liblua.so' 'lib/arm64-v8a/libbz2.so' \
+              'lib/arm64-v8a/libc++_shared.so' -d "$d" || true
+            rm -f /tmp/ons.apk
+            ls -la "$d" || true
+          fi
+      - name: renpy 模块 staging（librenpython.so + Java + 运行时资产）
+        run: bash modules/renpy/build_android.sh
+      - name: 磁盘清理（renpy NDK ~5GB + kirikiri vcpkg 树）+ 汇核心入 build/jniLibs
+        run: |
+          rm -rf third_party/upstream/renpy-build/tars/android-ndk-r29-linux.zip \
+                 third_party/upstream/renpy-build/tmp/cross.android \
+                 build/cores/kirikiri/cmake
+          mkdir -p build/jniLibs/arm64-v8a
+          cp build/cores/*/arm64-v8a/*.so build/jniLibs/arm64-v8a/
+          echo "== 汇总核心 =="; ls -la build/jniLibs/arm64-v8a/
+      - name: regenerate android shell
+        run: flutter create --platforms=android --org com.lusicgal --project-name lusicgal .
+      - name: restore committed files touched by create
+        run: git checkout -- pubspec.yaml analysis_options.yaml .gitignore || true
+      - name: patch platform shell（核心 jniLibs + renpy 模块 + largeHeap）
+        run: python3 scripts/patch_platform.py
+      - name: pub get (after patch)
+        run: flutter pub get
+      - name: build apk --release
+        run: flutter build apk --release
+      - name: 550MB 上限闸
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          sz=$(stat -c%s "$APK")
+          echo "APK size: $sz bytes ($((sz/1024/1024))MB)"
+          if [ "$sz" -gt 576716800 ]; then
+            echo "✗ 超 550MB 上限"; exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lusicgal-full-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error

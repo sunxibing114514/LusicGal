@@ -72,6 +72,49 @@ def patch_android_gradle(root: str) -> None:
     print('patch_platform: Gradle 未发现 flutter.compileSdkVersion（可能模板已变更）')
 
 
+def patch_engine_cores(root: str) -> None:
+    """引擎核心 .so 打包（build/jniLibs/arm64-v8a/*.so）：
+
+    全量构建（CI full-apk / 本地 assembleDebug）把 build/cores/<id>/ 汇入
+    build/jniLibs/ 后，给插件 build.gradle 追加 jniLibs srcDir —— "作为
+    jniLibs 放入任意 APK 即被 EngineHost.probe 识别"（docs/BUILD.md）的
+    Gradle 内建路径。目录不存在时零改动（普通构建不受影响）。
+    """
+    jnilibs = os.path.join(root, 'build', 'jniLibs', 'arm64-v8a')
+    if not (os.path.isdir(jnilibs) and
+            any(n.endswith('.so') for n in os.listdir(jnilibs))):
+        print('patch_platform: build/jniLibs 无核心（跳过核心打包）')
+        return
+    p = os.path.join(root, 'plugins', 'lusicgal_engines', 'android', 'build.gradle')
+    if not os.path.exists(p):
+        print('patch_platform: 未找到插件 build.gradle（核心打包跳过）')
+        return
+    with open(p, encoding='utf-8') as f:
+        src = f.read()
+    marker = "jniLibs.srcDir lgCoreLibs"
+    if marker in src:
+        print('patch_platform: 插件已接核心 jniLibs')
+        return
+    block = (
+        "\n// LusicGal 核心打包（patch_platform.py 注入）：build/jniLibs\n"
+        "//（build/cores/<id> 汇入；EngineHost.probe 运行期探测）。\n"
+        "// rootDir=<repo>/android → ../build/jniLibs = <repo>/build/jniLibs。\n"
+        "def lgCoreLibs = new File(rootDir, '../build/jniLibs')\n"
+        "if (lgCoreLibs.exists()) {\n"
+        "    android {\n"
+        "        sourceSets {\n"
+        "            main {\n"
+        "                jniLibs.srcDir lgCoreLibs\n"
+        "            }\n"
+        "        }\n"
+        "    }\n"
+        "}\n"
+    )
+    with open(p, 'a', encoding='utf-8') as f:
+        f.write(block)
+    print('patch_platform: 插件 build.gradle 已接 build/jniLibs 核心打包')
+
+
 def patch_renpy_module(root: str) -> None:
     """Ren'Py 外板壳模块（modules/renpy，Route B）：
 
@@ -144,4 +187,5 @@ if __name__ == '__main__':
     patch_ios(project_root)
     patch_android(project_root)
     patch_android_gradle(project_root)
+    patch_engine_cores(project_root)
     patch_renpy_module(project_root)
