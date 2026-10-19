@@ -170,15 +170,36 @@ def patch_renpy_module(root: str) -> None:
         dep_groovy = "implementation project(':module-renpy')"
         dep_kts = "implementation(project(\":module-renpy\"))"
         if dep_groovy in src or dep_kts in src:
+            print(f'patch_platform: {name} 已有 :module-renpy 依赖（跳过）')
             break
+        # 首选：并入已有 dependencies 块（模板锚 "dependencies {"）。
+        # 兜底：文件尾追加独立 dependencies 块 —— Gradle 允许重复同名顶层
+        # 配置块（Kotlin DSL 同）。CI 实证 Flutter 3.47 模板锚不中时静默
+        # 失败 → root 级 assembleRelease 会编译模块但 :app 不打包其
+        # dex/jniLibs/资产 —— 兜底后此路永不通。
         if name.endswith('.kts'):
             patched = src.replace('dependencies {', f'dependencies {{\n    {dep_kts}', 1)
+            if patched == src:
+                patched = src + (
+                    "\n// LusicGal: :module-renpy 运行时依赖（patch_platform 兜底）\n"
+                    f"dependencies {{\n    {dep_kts}\n}}\n"
+                )
+                how = '追加兜底块'
+            else:
+                how = '并入 dependencies 块'
         else:
             patched = src.replace('dependencies {', f'dependencies {{\n    {dep_groovy}', 1)
-        if patched != src:
-            with open(p, 'w', encoding='utf-8') as f:
-                f.write(patched)
-            print(f'patch_platform: {name} 已依赖 :module-renpy')
+            if patched == src:
+                patched = src + (
+                    "\n// LusicGal: :module-renpy 运行时依赖（patch_platform 兜底）\n"
+                    f"dependencies {{\n    {dep_groovy}\n}}\n"
+                )
+                how = '追加兜底块'
+            else:
+                how = '并入 dependencies 块'
+        with open(p, 'w', encoding='utf-8') as f:
+            f.write(patched)
+        print(f'patch_platform: {name} 已依赖 :module-renpy（{how}）')
         break
 
 

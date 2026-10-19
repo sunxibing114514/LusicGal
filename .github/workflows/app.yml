@@ -221,6 +221,25 @@ jobs:
           if [ "$sz" -gt 576716800 ]; then
             echo "✗ 超 550MB 上限"; exit 1
           fi
+      - name: 出包断言（renpy 三件套真进包：librenpython.so/private.mp3/x-common + 9 核在 lib/）
+        if: ${{ !cancelled() }}
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          miss=0
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/librenpython.so' \
+            || { echo "✗ APK 缺 librenpython.so（:module-renpy 未被 :app 依赖）"; miss=1; }
+          unzip -l "$APK" | grep -q 'assets/private.mp3' \
+            || { echo "✗ APK 缺 assets/private.mp3"; miss=1; }
+          unzip -l "$APK" | grep -q 'x-renpy/x-common/' \
+            || { echo "✗ APK 缺 x-renpy/x-common"; miss=1; }
+          for so in liblusicgal_sena liblusicgal_rfvp liblusicgal_siglus \
+                    liblusicgal_artemis liblusicgal_onscripter \
+                    liblusicgal_xsystem35 liblusicgal_kirikiri libengine_api; do
+            unzip -l "$APK" | grep -q "lib/arm64-v8a/$so.so" \
+              || { echo "✗ APK 缺 $so.so"; miss=1; }
+          done
+          [ "$miss" -eq 0 ] || exit 1
+          echo "✓ 出包断言全绿（renpy 三件套 + 9 核）"
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
