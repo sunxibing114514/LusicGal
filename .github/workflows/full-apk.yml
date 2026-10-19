@@ -1,0 +1,214 @@
+name: full-apk
+
+# 全量 APK 产线（2026-10-19 从 app.yml 迁出为独立工作流）：
+#   - workflow_dispatch：手动。
+#   - push tag v*：tag 推送即全量构建，绿了由 job 内 GITHUB_TOKEN
+#     自动建 release 并上传 APK —— 发布不依赖任何外部令牌
+#    （当日 api.github.com 认证面长波 401，git/Actions 通道正常，
+#     故改走 git push tag 触发 + Actions 内置令牌发布）。
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+env:
+  FLUTTER_CHANNEL: stable
+
+jobs:
+  full-apk:
+    # 全量 APK：11 引擎一杆过（4 Rust 真核 + onscripter/xsystem35/kirikiri +
+    # renpy 模块 + 3 web），Flutter 应用构建原生并入（manifest 合并 / jniLibs /
+    # 资产）。重：~1.5h、磁盘紧。
+    name: 全量 APK（11 引擎真核 + 壳）
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    permissions:
+      contents: write   # tag 触发时 gh release 建/传资产
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/rust/shells/sena
+            native/rust/shells/rfvp
+            native/rust/shells/siglus
+            native/rust/shells/artemis
+      - name: locate NDK
+        run: |
+          NDK="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$NDK" ] || [ ! -d "$NDK" ]; then
+            echo "未找到 NDK"; exit 1
+          fi
+          echo "NDK_HOME=$NDK" >> "$GITHUB_ENV"
+      - name: vcpkg 引导（kirikiri manifest 要完整历史 + VCPKG_ROOT）
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git /tmp/vcpkg
+          /tmp/vcpkg/bootstrap-vcpkg.sh
+          echo "VCPKG_ROOT=/tmp/vcpkg" >> "$GITHUB_ENV"
+      - name: renpy 宿主依赖（ccache/nasm/yasm + hostpython 全套 dev 头 + uv）
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ccache nasm yasm \
+            libbz2-dev zlib1g-dev libssl-dev libffi-dev libsqlite3-dev \
+            libreadline-dev uuid-dev liblzma-dev libncurses-dev
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: fetch upstream 全引擎
+        run: |
+          bash scripts/fetch_engines.sh sena-rs        && bash scripts/patch_engines.sh sena
+          bash scripts/fetch_engines.sh rfvp           && bash scripts/patch_engines.sh rfvp
+          bash scripts/fetch_engines.sh siglus-rs      && bash scripts/patch_engines.sh siglus
+          bash scripts/fetch_engines.sh art3m1s-core   && (bash scripts/patch_engines.sh artemis || true)
+          bash scripts/fetch_engines.sh onscripter-yuri || echo "⚠ onscripter 上游拉取失败（走 release 兜底）"
+          bash scripts/fetch_engines.sh xsystem35-sdl2
+          bash scripts/fetch_engines.sh kirikiri-next  && bash scripts/patch_engines.sh kirikiri-next
+          bash scripts/fetch_engines.sh renpy-build
+          bash scripts/fetch_engines.sh renpy
+      - name: build Rust 四核（sena/rfvp/siglus/artemis）
+        run: |
+          for e in sena rfvp siglus artemis; do
+            bash "native/engines/$e/build_android.sh"
+          done
+      - name: build C++ 核心（xsystem35 / kirikiri / onscripter best-effort）
+        run: |
+          bash native/engines/xsystem35/build_android.sh
+          bash native/engines/kirikiri/build_android.sh \
+            || { echo "⚠ kirikiri 首试失败（gperf/vcpkg 网络风暴？）20s 后重试"; sleep 20; \
+                 bash native/engines/kirikiri/build_android.sh; }
+          bash native/engines/onscripter/build_android.sh \
+            || echo "⚠ onscripter 构建失败（走 release 兜底）"
+      - name: onscripter 兜底（CI 拉不动上游 SDL 时，从上一版 release APK 抽核心）
+        if: ${{ !cancelled() }}
+        run: |
+          d=build/cores/onscripter/arm64-v8a
+          if [ ! -f "$d/liblusicgal_onscripter.so" ]; then
+            echo "onscripter 核心缺失 → 从 release v0.1.0-win-core 抽取"
+            mkdir -p "$d" /tmp/ons_apk
+            curl -L --fail -o /tmp/ons.apk \
+              https://github.com/sunxibing114514/LusicGal/releases/download/v0.1.0-win-core/LusicGal-debug.apk
+            unzip -o -j /tmp/ons.apk 'lib/arm64-v8a/liblusicgal_onscripter*.so' \
+              'lib/arm64-v8a/libonsyuri.so' 'lib/arm64-v8a/libSDL2*.so' \
+              'lib/arm64-v8a/liblua.so' 'lib/arm64-v8a/libbz2.so' \
+              'lib/arm64-v8a/libc++_shared.so' -d "$d" || true
+            rm -f /tmp/ons.apk
+            ls -la "$d" || true
+          fi
+      - name: renpy 模块 staging（librenpython.so + Java + 运行时资产）
+        if: ${{ !cancelled() }}
+        run: bash modules/renpy/build_android.sh
+      - name: 磁盘清理（renpy NDK ~5GB + kirikiri vcpkg 树）+ 汇核心入 build/jniLibs
+        if: ${{ !cancelled() }}
+        run: |
+          rm -rf third_party/upstream/renpy-build/tars/android-ndk-r29-linux.zip \
+                 third_party/upstream/renpy-build/tmp/cross.android \
+                 build/cores/kirikiri/cmake
+          mkdir -p build/jniLibs/arm64-v8a
+          # 引擎间重名 .so（libSDL2/libc++_shared 等）：先到先得（-n），
+          # ABI 兼容同源构建 —— 实测 onscripter/xsystem35 双份 SDL2 撞名。
+          for so in build/cores/*/arm64-v8a/*.so; do
+            cp -n "$so" build/jniLibs/arm64-v8a/
+          done
+          echo "== 汇总核心 =="; ls -la build/jniLibs/arm64-v8a/
+      - name: 核心清单校验（缺任一必绿核即败，防"哑巴降级"出包）
+        run: |
+          d=build/jniLibs/arm64-v8a
+          miss=0
+          for so in liblusicgal_sena.so liblusicgal_rfvp.so liblusicgal_siglus.so \
+                     liblusicgal_artemis.so liblusicgal_onscripter.so \
+                     liblusicgal_xsystem35.so liblusicgal_kirikiri.so \
+                     libengine_api.so; do
+            [ -f "$d/$so" ] || { echo "✗ 缺 $so"; miss=1; }
+          done
+          # librenpython.so 走 :module-renpy 自己的 jniLibs（build-out）。
+          [ -f modules/renpy/build-out/jniLibs/arm64-v8a/librenpython.so ] \
+            || { echo "✗ 缺 librenpython.so（build-out）"; miss=1; }
+          [ "$miss" -eq 0 ] || exit 1
+          echo "✓ 9/9 核心 .so 齐"
+      - name: regenerate android shell
+        if: ${{ !cancelled() }}
+        run: flutter create --platforms=android --org com.lusicgal --project-name lusicgal .
+      - name: restore committed files touched by create
+        if: ${{ !cancelled() }}
+        run: git checkout -- pubspec.yaml analysis_options.yaml .gitignore || true
+      - name: patch platform shell（核心 jniLibs + renpy 模块 + largeHeap）
+        if: ${{ !cancelled() }}
+        run: python3 scripts/patch_platform.py
+      - name: pub get (after patch)
+        if: ${{ !cancelled() }}
+        run: flutter pub get
+      - name: build apk --release
+        if: ${{ !cancelled() }}
+        run: flutter build apk --release
+      - name: 550MB 上限闸
+        if: ${{ !cancelled() }}
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          sz=$(stat -c%s "$APK")
+          echo "APK size: $sz bytes ($((sz/1024/1024))MB)"
+          if [ "$sz" -gt 576716800 ]; then
+            echo "✗ 超 550MB 上限"; exit 1
+          fi
+      - name: 出包断言（renpy 三件套真进包：librenpython.so/private.mp3/x-common + 9 核在 lib/）
+        if: ${{ !cancelled() }}
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          miss=0
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/librenpython.so' \
+            || { echo "✗ APK 缺 librenpython.so（:module-renpy 未被 :app 依赖）"; miss=1; }
+          unzip -l "$APK" | grep -q 'assets/private.mp3' \
+            || { echo "✗ APK 缺 assets/private.mp3"; miss=1; }
+          unzip -l "$APK" | grep -q 'x-renpy/x-common/' \
+            || { echo "✗ APK 缺 x-renpy/x-common"; miss=1; }
+          for so in liblusicgal_sena liblusicgal_rfvp liblusicgal_siglus \
+                    liblusicgal_artemis liblusicgal_onscripter \
+                    liblusicgal_xsystem35 liblusicgal_kirikiri libengine_api; do
+            unzip -l "$APK" | grep -q "lib/arm64-v8a/$so.so" \
+              || { echo "✗ APK 缺 $so.so"; miss=1; }
+          done
+          [ "$miss" -eq 0 ] || exit 1
+          echo "✓ 出包断言全绿（renpy 三件套 + 9 核）"
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: lusicgal-full-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+      - name: 发布 release（tag 触发；Actions 内置令牌，免外部认证）
+        # success()：本轮构建+550 闸+出包断言全绿才发布
+        #（550 闸/断言虽为 !cancelled() 诊断链，失败即此处跳过）。
+        if: ${{ startsWith(github.ref, 'refs/tags/v') && success() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          APK="LusicGal-${TAG}.apk"
+          cp build/app/outputs/flutter-apk/app-release.apk "$APK"
+          sz=$(stat -c%s "$APK")
+          NOTE="全量 APK（8 原生核心 + 3 Web 引擎，11 引擎全部 App 内直达游玩）。
+
+          - 构建提交：${GITHUB_SHA}
+          - 出包断言：renpy 三件套（librenpython.so / private.mp3 / x-renpy/x-common）+ 9 核心 .so 全部在包
+          - 体积：$((sz/1024/1024)) MB（上限 550 MB）
+          - iOS：源码位保持，不构建
+
+          CI 签名（debug）可直接侧载安装。"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+            echo "✓ 资产已更新到既有 release $TAG"
+          else
+            gh release create "$TAG" "$APK" \
+              --title "LusicGal $TAG" \
+              --target "$GITHUB_SHA" \
+              --notes "$NOTE"
+            echo "✓ release $TAG 已建并上传 $APK"
+          fi
