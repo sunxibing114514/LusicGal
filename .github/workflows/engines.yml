@@ -64,13 +64,6 @@ jobs:
         engine: [sena, rfvp, siglus, artemis]
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-      - uses: actions/setup-android@v3
-        with:
-          packages: ''
       - name: locate NDK
         run: |
           NDK="$(ls -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"/ndk/* 2>/dev/null | sort -V | tail -1)"
