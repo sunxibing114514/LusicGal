@@ -161,6 +161,26 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 各引擎的具体链路（vcpkg triplet / SDL 取窗补丁 / cargo 交叉…）见各
 `native/engines/<id>/README.md` 与 `docs/ENGINE_NOTES.md`。
 
+## 全量 APK（CI 一杆过，推荐产线）
+
+`app.yml :: 全量 APK` job（手动 workflow_dispatch）在单个 runner 上串起
+全部引擎 + Flutter 壳 + Gradle 原生合并，直接产出 **11 引擎完整 APK**：
+
+- Rust 四核（sena/rfvp/siglus/artemis）→ `build/cores/`
+- C++ 三核（xsystem35 / kirikiri×vcpkg / onscripter）→ `build/cores/`
+  （onscripter 上游 SDL 拉取在 CI 网络下不稳 —— 自动从上一版 release APK
+  抽取既有核心兜底，`核心清单校验` 步 9/9 齐才放行）
+- renpy 模块 staging（`modules/renpy/build-out/.ready`）→ `:module-renpy`
+  经 patch_platform.py 并入（manifest 合并 + dex + librenpython.so + 资产；
+  namespace=org.renpy.android 对齐 rapt 裸 R 引用）
+- 汇核心 `build/cores/*/arm64-v8a/*.so` → `build/jniLibs/arm64-v8a/` →
+  插件 Gradle `jniLibs.srcDir`（patch_platform.patch_engine_cores 注入）
+- `flutter build apk --release` → 产物 artifact `lusicgal-full-apk`
+- 550MB 上限闸（超限即败，不出包）
+
+本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
+链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
+
 ## widget 测试契约（避免死锁）
 
 - `testWidgets` body 运行于 fake-async zone：`scheduleMicrotask` 被拦截。**一切真实 IO（文件读写、临时目录）必须包进 `tester.runAsync`**，否则 IO 完成回调停在 fake 队列，body 永久挂起（超时堆栈为 `dart:isolate _RawReceivePort._handleMessage`）。
