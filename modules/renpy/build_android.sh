@@ -53,8 +53,11 @@ if [ ! -d "$NDKUN/toolchains" ]; then
   mkdir -p "$NDKUN"
   ( cd "$NDKUN" && unzip -q "$NDKZIP" )
 fi
-NDKBIN="$(find "$NDKUN" -type d -path '*llvm*' -name bin | head -1 || true)"
-if [ -n "$NDKBIN" ]; then
+# 真工具链 bin = 含裸名 clang 可执行文件的那个（早前 find 误抓
+# lib/clang/21/bin 资源目录 —— CI 实证）。
+CLANG_BIN="$(find "$NDKUN" -type f -path '*/prebuilt/*/bin/clang' | head -1 || true)"
+if [ -n "$CLANG_BIN" ]; then
+  NDKBIN="$(dirname "$CLANG_BIN")"
   [ -e "$NDKBIN/clang-22" ] || ln -s clang "$NDKBIN/clang-22"
   export PATH="$NDKBIN:$PATH"
   echo "  clang-22 → $NDKBIN/clang-22（PATH 注入）"
