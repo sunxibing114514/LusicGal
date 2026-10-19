@@ -72,6 +72,55 @@ def patch_android_gradle(root: str) -> None:
     print('patch_platform: Gradle 未发现 flutter.compileSdkVersion（可能模板已变更）')
 
 
+def patch_release_minify(root: str) -> None:
+    """关 release 压缩（R8/资源 shrink）。
+
+    Flutter 3.27+ 模板默认 minify+shrinkResources 开 —— CI 实证 R8 崩在
+    renpy 模块的 SDL 字节码上（minifyReleaseWithR8: Compilation failed to
+    complete, origin org/libsdl/app/SDLActivity）。引擎重字节码不值得 R8
+    冒险，关掉（体积代价 ~几 MB dex，安全换稳定）。
+    """
+    app_dir = os.path.join(root, 'android', 'app')
+    for name in ('build.gradle.kts', 'build.gradle'):
+        p = os.path.join(app_dir, name)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        if 'isMinifyEnabled' in src or 'minifyEnabled' in src:
+            print(f'patch_platform: {name} 已含 minify 设置（跳过）')
+            return
+        if name.endswith('.kts'):
+            block = (
+                "\n// LusicGal: 关 release 压缩（patch_platform：R8 崩 SDL 字节码）\n"
+                "android {\n"
+                "    buildTypes {\n"
+                "        release {\n"
+                "            isMinifyEnabled = false\n"
+                "            isShrinkResources = false\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        else:
+            block = (
+                "\n// LusicGal: 关 release 压缩（patch_platform：R8 崩 SDL 字节码）\n"
+                "android {\n"
+                "    buildTypes {\n"
+                "        release {\n"
+                "            minifyEnabled false\n"
+                "            shrinkResources false\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        with open(p, 'a', encoding='utf-8') as f:
+            f.write(block)
+        print(f'patch_platform: {name} release 压缩已关（R8/shrink）')
+        return
+    print('patch_platform: 未找到 app gradle（跳过 minify 补丁）')
+
+
 def patch_engine_cores(root: str) -> None:
     """引擎核心 .so 打包（build/jniLibs/arm64-v8a/*.so）：
 
@@ -208,5 +257,6 @@ if __name__ == '__main__':
     patch_ios(project_root)
     patch_android(project_root)
     patch_android_gradle(project_root)
+    patch_release_minify(project_root)
     patch_engine_cores(project_root)
     patch_renpy_module(project_root)
