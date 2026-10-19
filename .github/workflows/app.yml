@@ -118,6 +118,13 @@ jobs:
           git clone https://github.com/microsoft/vcpkg.git /tmp/vcpkg
           /tmp/vcpkg/bootstrap-vcpkg.sh
           echo "VCPKG_ROOT=/tmp/vcpkg" >> "$GITHUB_ENV"
+      - name: renpy 宿主依赖（ccache/nasm/yasm + hostpython 全套 dev 头 + uv）
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q ccache nasm yasm \
+            libbz2-dev zlib1g-dev libssl-dev libffi-dev libsqlite3-dev \
+            libreadline-dev uuid-dev liblzma-dev libncurses-dev
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: fetch upstream 全引擎
         run: |
           bash scripts/fetch_engines.sh sena-rs        && bash scripts/patch_engines.sh sena
@@ -168,7 +175,11 @@ jobs:
                  third_party/upstream/renpy-build/tmp/cross.android \
                  build/cores/kirikiri/cmake
           mkdir -p build/jniLibs/arm64-v8a
-          cp build/cores/*/arm64-v8a/*.so build/jniLibs/arm64-v8a/
+          # 引擎间重名 .so（libSDL2/libc++_shared 等）：先到先得（-n），
+          # ABI 兼容同源构建 —— 实测 onscripter/xsystem35 双份 SDL2 撞名。
+          for so in build/cores/*/arm64-v8a/*.so; do
+            cp -n "$so" build/jniLibs/arm64-v8a/
+          done
           echo "== 汇总核心 =="; ls -la build/jniLibs/arm64-v8a/
       - name: 核心清单校验（缺任一必绿核即败，防"哑巴降级"出包）
         run: |

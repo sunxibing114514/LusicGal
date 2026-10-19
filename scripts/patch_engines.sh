@@ -210,7 +210,8 @@ ANCHOR = """target_include_directories(CubismFramework PUBLIC
     ${CUBISM_FW_DIR}
     ${CUBISM_CORE_DIR}/include
 )"""
-REPLACEMENT = """get_target_property(_LG_CUBISM_TYPE CubismFramework TYPE)
+REPLACEMENT = """# LUSICGAL_NO_CUBISM_INC1：INTERFACE 目标只吃 INTERFACE 用法要求。
+get_target_property(_LG_CUBISM_TYPE CubismFramework TYPE)
 if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
     target_include_directories(CubismFramework INTERFACE
         ${CUBISM_FW_DIR}
@@ -226,7 +227,8 @@ endif()"""
 patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_DEF' '
 ANCHOR = """target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)"""
-REPLACEMENT = """if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+REPLACEMENT = """# LUSICGAL_NO_CUBISM_DEF：同 INC1（INTERFACE 分支）。
+if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
     target_compile_definitions(CubismFramework INTERFACE CSM_TARGET_ANGLE_ES2)
 else()
     target_compile_definitions(CubismFramework PUBLIC CSM_TARGET_ANGLE_ES2)
@@ -235,7 +237,8 @@ endif()"""
 patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_INC2' '
 ANCHOR = """        target_include_directories(CubismFramework PRIVATE ${_EGL_INCS})"""
-REPLACEMENT = """        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+REPLACEMENT = """        # LUSICGAL_NO_CUBISM_INC2：同 INC1（INTERFACE 分支）。
+        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
             target_include_directories(CubismFramework INTERFACE ${_EGL_INCS})
         else()
             target_include_directories(CubismFramework PRIVATE ${_EGL_INCS})
@@ -245,7 +248,8 @@ patch_file kirikiri-next "cpp/plugins/CMakeLists.txt" \
   'LUSICGAL_NO_CUBISM_INC3' '
 ANCHOR = """        target_include_directories(CubismFramework PRIVATE
             ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)"""
-REPLACEMENT = """        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
+REPLACEMENT = """        # LUSICGAL_NO_CUBISM_INC3：同 INC1（INTERFACE 分支）。
+        if(_LG_CUBISM_TYPE STREQUAL "INTERFACE_LIBRARY")
             target_include_directories(CubismFramework INTERFACE
                 ${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include)
         else()
