@@ -194,6 +194,29 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 - `flutter build apk --release` → 产物 artifact `lusicgal-full-apk`
 - 550MB 上限闸（超限即败，不出包）
 
+### v0.1.2 修复轮（Android 10 现机反馈四连）
+
+- **打开闪退**：旧探测在 App 启动（IndexedStack 四页全建 → 引擎页
+  initState → probeEngines）就连环 dlopen 九个核心（engine_api 45MB、
+  双 SDL、Oboe 初始化……），任何一环在老系统失败/崩溃 = 整个 App 打开
+  闪退。**探测改为 `nativeLibraryDir` 存在性检查（零装载）**，核心只在
+  用户点"开始游戏"时经 `EngineHost.ensureNative`（bridge + core +
+  SDL 音频引导）真正装载，失败全部走 CORE_NOT_BUNDLED 可恢复路径。
+- **Tyrano 进游戏闪退（aapt2 实证真因）**：Flutter 模板 release 清单
+  **不带 `INTERNET` 权限** → `LocalWebServer` 的
+  `ServerSocket(127.0.0.1)` 直接 EACCES 崩掉 WebGameActivity。修复：
+  插件清单补 `INTERNET` + `usesCleartextTraffic="true"`（targetSdk 28+
+  默认拦 localhost 明文，模板只在 debug 变体开）；WebGameActivity
+  服务启动加 Toast + 温和退出兜底。
+- **选文件夹即用（不导入）**：SAF `ACTION_OPEN_DOCUMENT_TREE` +
+  takePersistableUriPermission → 解析直路径（`primary:…` →
+  `/storage/emulated/0/…`）+ 可读性探测（`canRead()+list()`）→
+  `sourceKind=folder` 引用条目（删除条目绝不删用户文件）。
+  Android 10 共享目录直路径受限（FUSE 直路径中介是 11+ 特性）→
+  UI 降级提示改用 App 专属目录；11+ 全引擎原地游玩。
+- **默认横屏**：RenpyGameActivity manifest `sensorLandscape`；播放器页
+  进/出横屏锁定与恢复；WebGameActivity 本就横屏。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 
