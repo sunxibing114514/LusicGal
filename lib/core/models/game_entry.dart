@@ -15,6 +15,8 @@ class GameEntry {
     this.playedSeconds = 0,
     this.pathMissing = false,
     this.options = const {},
+    this.sourceKind = 'imported',
+    this.folderUri,
   });
 
   final String id;
@@ -36,6 +38,16 @@ class GameEntry {
   /// 启动选项（跨引擎通用 JSON：条目级引擎参数覆盖）。
   Map<String, Object?> options;
 
+  /// 'imported'（App 沙盒副本，可安全删除）/ 'folder'（引用用户文件夹，
+  /// 文件归用户所有 —— 删除条目时绝不删文件）。
+  final String sourceKind;
+
+  /// folder 条目的 SAF 树 URI（持久化授权凭证；路径失效时可重新定位）。
+  final String? folderUri;
+
+  /// 引用文件夹条目（即选即用，未复制入库）。
+  bool get isReferenced => sourceKind == 'folder';
+
   Map<String, Object?> toJson() => {
         'id': id,
         'title': title,
@@ -46,6 +58,8 @@ class GameEntry {
         'lastPlayedAt': lastPlayedAt?.toIso8601String(),
         'playedSeconds': playedSeconds,
         if (options.isNotEmpty) 'options': options,
+        if (sourceKind != 'imported') 'sourceKind': sourceKind,
+        if (folderUri != null) 'folderUri': folderUri,
       };
 
   static GameEntry fromJson(Map<Object?, Object?> json) {
@@ -65,6 +79,8 @@ class GameEntry {
       options: optionsRaw is Map
           ? optionsRaw.map((k, v) => MapEntry('$k', v))
           : const {},
+      sourceKind: json['sourceKind'] as String? ?? 'imported',
+      folderUri: json['folderUri'] as String?,
     );
   }
 

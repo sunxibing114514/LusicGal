@@ -83,6 +83,8 @@ class LibraryStore extends ChangeNotifier {
     required EngineId engine,
     required String path,
     String? engineDetail,
+    String sourceKind = 'imported',
+    String? folderUri,
   }) async {
     final entry = GameEntry(
       id: GameEntry.newId(),
@@ -91,6 +93,8 @@ class LibraryStore extends ChangeNotifier {
       engineDetail: engineDetail,
       path: path,
       addedAt: DateTime.now(),
+      sourceKind: sourceKind,
+      folderUri: folderUri,
     );
     _games.add(entry);
     await _persist();
@@ -116,11 +120,12 @@ class LibraryStore extends ChangeNotifier {
   }
 
   /// 移除条目；[deleteFiles] 同时删除游戏文件目录。
+  /// 引用文件夹条目（sourceKind=folder）的文件归用户所有 —— 一律不删。
   Future<void> remove(String id, {required bool deleteFiles}) async {
     final g = byId(id);
     if (g == null) return;
     _games.remove(g);
-    if (deleteFiles) {
+    if (deleteFiles && !g.isReferenced) {
       final dir = Directory(g.path);
       if (dir.existsSync()) {
         try {

@@ -58,7 +58,7 @@ class _EmptyLibrary extends StatelessWidget {
           Text('书库还是空的', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
           Text(
-            '把游戏文件夹放入 App 专属目录，\n或用系统选择器导入封包文件',
+            '点右上角"导入游戏"选择游戏文件夹，\n即选即玩，不复制、不占用额外空间',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: Theme.of(context).colorScheme.outline,

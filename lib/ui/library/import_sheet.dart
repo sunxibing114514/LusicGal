@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../core/library/import_service.dart';
 import '../../core/library/library_store.dart';
 import '../../core/models/engine_id.dart';
+import '../../engine/engine_host.dart';
 import '../ui_helpers.dart';
 
 /// 打开导入面板：扫描 App 专属目录的候选文件夹 / 系统选择器挑封包文件。
@@ -65,14 +66,31 @@ class _ImportSheetState extends State<ImportSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Text(
-                '把游戏文件夹放入 App 专属目录（Android：'
-                'Android/data/com.lusicgal/files/；iOS：文件 App 中的 LusicGal），'
-                '或选择单个封包文件导入。',
+                '首选"选择游戏文件夹"：直接指向你放游戏的位置，即选即玩、不复制入库。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.outline,
                     ),
               ),
             ),
+            const SizedBox(height: 8),
+            // 即选即用主通道：SAF 选文件夹 → 解析直路径 → 原地登记（不复制）。
+            FilledButton.icon(
+              onPressed: _busy ? null : _pickFolder,
+              icon: const Icon(Icons.folder_open),
+              label: const Text('选择游戏文件夹（不复制，即选即玩）'),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Text(
+                '支持共享目录（Download 等）与 App 专属目录。'
+                'Android 10 共享目录受限时，请把游戏文件夹移入 App 专属目录后从下方列表导入。',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.outline,
+                    ),
+              ),
+            ),
+            const Divider(height: 24),
+            Text('或从 App 专属目录扫描', style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             Flexible(
               child: FutureBuilder<List<ImportCandidate>>(
@@ -146,6 +164,54 @@ class _ImportSheetState extends State<ImportSheet> {
         ),
       ),
     );
+  }
+
+  /// SAF 选择游戏文件夹 → 解析直路径 → 原地登记为引用条目（不复制）。
+  Future<void> _pickFolder() async {
+    final host = context.read<EngineHost>();
+    final picked = await host.pickGameFolder();
+    if (!mounted) return;
+    if (!picked.ok) {
+      // 用户取消（无 message 差异）静默；真实失败给出原因。
+      if (picked.message != null && picked.message != '已取消') {
+        _toast(picked.message!);
+      }
+      return;
+    }
+    if (picked.path == null || !picked.readable) {
+      _toast(
+        picked.message ?? '该文件夹无法直接读取，请移入 App 专属目录后扫描导入。',
+      );
+      return;
+    }
+    setState(() => _busy = true);
+    var summary = await _import.addReferencedDirectory(
+      Directory(picked.path!),
+      title: picked.name,
+      folderUri: picked.uri,
+    );
+    if (summary.needsConfirmation && mounted) {
+      final engine = await _pickEngineDialog();
+      if (engine == null) {
+        setState(() => _busy = false);
+        return;
+      }
+      summary = await _import.addReferencedDirectory(
+        Directory(picked.path!),
+        title: picked.name,
+        folderUri: picked.uri,
+        forceEngine: engine,
+      );
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (summary.imported) {
+      Navigator.of(context).pop();
+      _toast('已收录《${_store.byId(summary.gameId ?? '')?.title}》'
+          '（${summary.engineDetail ?? summary.engine?.label}· 引用文件夹）');
+    } else {
+      _toast(summary.error ?? '未能识别引擎类型，可稍后在详情面板手动指定。');
+    }
   }
 
   Future<void> _importDirectory(ImportCandidate candidate) async {

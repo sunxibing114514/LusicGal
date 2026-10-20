@@ -52,6 +52,9 @@ class EngineHost {
   Stream<EngineEvent> events({String? gameId}) =>
       _engines.events(gameId: gameId);
 
+  /// 选择游戏文件夹（SAF；返回可读取的直路径或失败原因）。
+  Future<FolderPickResult> pickGameFolder() => _engines.pickGameFolder();
+
   Future<void> pause() => _engines.sendCommand('pause');
 
   Future<void> resume() => _engines.sendCommand('resume');

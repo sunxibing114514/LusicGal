@@ -60,6 +60,7 @@ class _DetailSheet extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
+              '${entry.isReferenced ? '引用文件夹（未复制入库）' : '已入库'}\n'
               '路径：${entry.path}\n'
               '添加于 ${entry.addedAt.toLocal().toString().substring(0, 16)} · '
               '累计游玩 ${entry.playedDisplay}',
@@ -190,6 +191,34 @@ class _DetailSheet extends StatelessWidget {
   }
 
   Future<void> _confirmDelete(BuildContext context, LibraryStore store) async {
+    // 引用文件夹条目：文件归用户所有 —— 只提供移除记录，绝不删文件。
+    if (entry.isReferenced) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('移除《${entry.title}》'),
+          content: const Text(
+            '该游戏是引用文件夹条目（未复制入库）：\n'
+            '仅从书库移除记录，你的游戏文件夹不会被改动。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('仅移除记录'),
+            ),
+          ],
+        ),
+      );
+      if (go == true && context.mounted) {
+        await store.remove(entry.id, deleteFiles: false);
+        if (context.mounted) Navigator.of(context).pop();
+      }
+      return;
+    }
     final choice = await showDialog<_DeleteChoice>(
       context: context,
       builder: (dialogContext) => AlertDialog(

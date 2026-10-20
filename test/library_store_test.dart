@@ -109,4 +109,48 @@ void main() {
     await store.load();
     expect(store.games, isEmpty);
   });
+
+  test('引用文件夹条目：登记 / JSON 回读 / 删除保护', () async {
+    final store = LibraryStore(root: tmp);
+    await store.load();
+    // 模拟用户共享目录中的游戏文件夹（在库外）。
+    final userGame = Directory('${tmp.path}/shared/MyGame');
+    await userGame.create(recursive: true);
+
+    final ref = await store.addNew(
+      title: 'MyGame',
+      engine: EngineId.tyrano,
+      path: userGame.path,
+      sourceKind: 'folder',
+      folderUri: 'content://tree/primary%3Ashared%2FMyGame',
+    );
+    expect(ref.isReferenced, isTrue);
+    expect(ref.folderUri, isNotNull);
+
+    // JSON 回读：引用字段不丢。
+    final reloaded = LibraryStore(root: tmp);
+    await reloaded.load();
+    final g = reloaded.games.single;
+    expect(g.isReferenced, isTrue);
+    expect(g.sourceKind, 'folder');
+    expect(g.folderUri, startsWith('content://tree/'));
+
+    // 即使请求 deleteFiles=true，引用条目也绝不删用户文件。
+    await reloaded.remove(g.id, deleteFiles: true);
+    expect(reloaded.games, isEmpty);
+    expect(userGame.existsSync(), isTrue,
+        reason: '引用文件夹条目删除时不得动用户文件');
+
+    // 普通导入条目保持原有删除语义（回归护栏）。
+    final dir = Directory('${tmp.path}/g4');
+    await dir.create(recursive: true);
+    final normal = await store.addNew(
+      title: '入库副本',
+      engine: EngineId.kirikiri,
+      path: dir.path,
+    );
+    expect(normal.isReferenced, isFalse);
+    await store.remove(normal.id, deleteFiles: true);
+    expect(dir.existsSync(), isFalse);
+  });
 }

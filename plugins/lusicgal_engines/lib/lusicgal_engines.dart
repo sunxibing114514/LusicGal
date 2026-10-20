@@ -67,6 +67,39 @@ class EngineEvent {
   final Map<Object?, Object?> data;
 }
 
+/// 文件夹选择结果（SAF ACTION_OPEN_DOCUMENT_TREE）。
+///
+/// [readable] 表示解析出的直路径当前可被 dart:io / 原生核心直接读取
+/// （Android 10 共享目录受限时为 false，此时无法即选即用）。
+@immutable
+class FolderPickResult {
+  const FolderPickResult({
+    required this.ok,
+    this.uri,
+    this.path,
+    this.name,
+    this.readable = false,
+    this.message,
+  });
+
+  factory FolderPickResult.fromMap(Map<Object?, Object?> map) => FolderPickResult(
+        ok: map['ok'] == true,
+        uri: map['uri'] as String?,
+        path: map['path'] as String?,
+        name: map['name'] as String?,
+        readable: map['readable'] == true,
+        message: map['message'] as String?,
+      );
+
+  /// 用户完成选择（区别于取消/失败）。
+  final bool ok;
+  final String? uri;
+  final String? path;
+  final String? name;
+  final bool readable;
+  final String? message;
+}
+
 /// 平台桥入口：probe / launch / command / events。
 class LusicgalEngines {
   static const MethodChannel _method = MethodChannel('lusicgal/engines');
@@ -137,4 +170,20 @@ class LusicgalEngines {
 
   /// 单个游戏的会话事件流。
   Stream<EngineEvent> events({String? gameId}) => _eventStream(gameId ?? 'global');
+
+  /// 选择游戏文件夹（SAF；Android 实现，其他平台返回 ok=false）。
+  Future<FolderPickResult> pickGameFolder() async {
+    try {
+      final raw =
+          await _method.invokeMethod<Map<Object?, Object?>>('pickGameFolder');
+      if (raw == null) {
+        return const FolderPickResult(ok: false, message: '平台桥无返回');
+      }
+      return FolderPickResult.fromMap(raw);
+    } on MissingPluginException {
+      return const FolderPickResult(ok: false, message: '当前平台不支持文件夹选择');
+    } on PlatformException catch (e) {
+      return FolderPickResult(ok: false, message: e.message);
+    }
+  }
 }

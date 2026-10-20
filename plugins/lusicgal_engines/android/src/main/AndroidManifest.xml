@@ -1,6 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Web 引擎运行页（Tyrano / RPG MV / MZ；本地 HTTP + hook 注入跑法）。 -->
-    <application>
+
+    <!-- 2026-10-19 实测闪退修复：Flutter 模板 release 清单不带 INTERNET，
+         LocalWebServer 的 ServerSocket(127.0.0.1) 直接 EACCES 崩掉
+         WebGameActivity（Tyrano 进入即闪退）。WebView 装载 localhost
+         同样依赖。 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- targetSdk 28+ 默认禁明文 HTTP —— WebView 加载 http://127.0.0.1
+         会被 ERR_CLEARTEXT_NOT_PERMITTED 拦截（模板只在 debug 变体开）。
+         本服务仅回环本地文件，无外部明文流量。 -->
+    <application android:usesCleartextTraffic="true">
         <activity
             android:name="com.lusicgal.engines.web.WebGameActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"

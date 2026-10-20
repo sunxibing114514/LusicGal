@@ -18,6 +18,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.Toast
 import java.io.File
 
 /**
@@ -75,8 +76,24 @@ class WebGameActivity : Activity() {
             ByteArray(0)
         }
 
-        val srv = LocalWebServer(root, asar, hook)
-        srv.start()
+        // 本地 HTTP 服务是 Web 引擎的命脉（2026-10-19 修复：release 包缺
+        // INTERNET 权限时 ServerSocket(127.0.0.1) 直接 EACCES 崩掉本页 ——
+        // 现已补权限，此处再兜底：任何启动异常以 Toast 提示后温和退出）。
+        val srv = try {
+            val s = LocalWebServer(root, asar, hook)
+            s.start()
+            s
+        } catch (t: Throwable) {
+            Log.e(TAG, "本地服务启动失败：$t")
+            try {
+                Toast.makeText(
+                    this, "本地服务启动失败：${t.message}", Toast.LENGTH_LONG
+                ).show()
+            } catch (_: Throwable) {
+            }
+            finish()
+            return
+        }
         server = srv
 
         val rootLayout = FrameLayout(this)

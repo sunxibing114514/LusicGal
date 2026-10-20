@@ -43,6 +43,11 @@ class _PlayerScreenState extends State<PlayerScreen> {
     _host = context.read<EngineHost>();
     _saves = context.read<SaveManager>();
     _store = context.read<LibraryStore>();
+    // 默认横屏游玩（用户 2026-10-19 需求）：进播放器锁横屏，退出恢复。
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     WidgetsBinding.instance.addPostFrameCallback((_) => _launch());
   }
 
@@ -91,6 +96,13 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void dispose() {
     _subscription?.cancel();
+    // 恢复自由旋转（横屏仅是游玩页默认，不锁死整个 App）。
+    SystemChrome.setPreferredOrientations(const [
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
     final elapsed = DateTime.now().difference(_startedAt);
     final host = _host;
     final store = _store;

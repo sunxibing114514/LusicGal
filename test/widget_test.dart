@@ -8,6 +8,7 @@ import 'package:lusicgal/core/library/library_store.dart';
 import 'package:lusicgal/core/saves/save_manager.dart';
 import 'package:lusicgal/core/settings/settings_controller.dart';
 import 'package:lusicgal/engine/engine_host.dart';
+import 'package:lusicgal/ui/library/library_screen.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
@@ -91,5 +92,46 @@ void main() {
       await tester.pump(const Duration(milliseconds: 120));
     }
     expect(find.text('书库还是空的'), findsOneWidget);
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
+  testWidgets('导入面板：选择游戏文件夹主按钮接线', (tester) async {
+    final dir = (await tester.runAsync(
+        () => Directory.systemTemp.createTemp('lg_sheet')))!;
+    addTearDown(() => tester.runAsync(() => dir.delete(recursive: true)));
+
+    final store = LibraryStore(root: dir);
+    await tester.runAsync(store.load);
+    final settings =
+        SettingsController(file: File(p.join(dir.path, 'settings.json')));
+    await tester.runAsync(settings.load);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<LibraryStore>.value(value: store),
+          ChangeNotifierProvider<SettingsController>.value(value: settings),
+          Provider<ImportService>.value(
+            value: ImportService(store: store, importRoots: [dir]),
+          ),
+          Provider<SaveManager>.value(value: SaveManager(root: dir)),
+          Provider<EngineHost>.value(value: EngineHost()),
+        ],
+        child: const MaterialApp(home: LibraryScreen()),
+      ),
+    );
+    for (var i = 0; i < 3; i++) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    // 打开导入面板。
+    await tester.tap(find.byTooltip('导入游戏'));
+    for (var i = 0; i < 5; i++) {
+      await tester.pump(const Duration(milliseconds: 120));
+    }
+
+    // 即选即用主按钮 + 降级说明 + 扫描通道标题都在。
+    expect(find.text('选择游戏文件夹（不复制，即选即玩）'), findsOneWidget);
+    expect(find.text('或从 App 专属目录扫描'), findsOneWidget);
+    expect(find.text('重新扫描'), findsOneWidget);
   }, timeout: const Timeout(Duration(minutes: 2)));
 }

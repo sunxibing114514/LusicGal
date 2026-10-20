@@ -1,9 +1,14 @@
 package com.lusicgal.engines
 
+import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
+import android.net.Uri
+import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.provider.DocumentsContract
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.SurfaceHolder
@@ -14,20 +19,24 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.EventChannel
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 
 /**
  * LusicGal 平台桥（v2）：
- * - MethodChannel `lusicgal/engines`：probeEngines / launch / command / pushInput / surfaceSize
+ * - MethodChannel `lusicgal/engines`：probeEngines / launch / command / pushInput / surfaceSize / pickGameFolder
  * - EventChannel  `lusicgal/engineEvents`：log / state / exit / core_missing（核心线程 → 主线程）
  * - PlatformView  `lusicgal-engine-view`：核心可用时为 SurfaceView（ANativeWindow 注入），
  *   不可用时为原生占位视图。
  */
-class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
+class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
+    ActivityAware, io.flutter.plugin.common.PluginRegistry.ActivityResultListener {
 
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
@@ -36,6 +45,17 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
 
     /** 应用上下文（renpy 外板壳 Activity 启动用）。 */
     private var context: Context? = null
+
+    /** 当前宿主 Activity（pickGameFolder 的 SAF 选择器需要）。 */
+    private var currentActivity: Activity? = null
+
+    /** 待回答的文件夹选择结果（一次只允许一个选择器）。 */
+    @Volatile
+    private var pendingFolderResult: MethodChannel.Result? = null
+
+    companion object {
+        private const val REQUEST_PICK_GAME_FOLDER = 47001
+    }
 
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
@@ -84,6 +104,97 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
         EngineHost.appContext = null
     }
 
+    // ---- ActivityAware：SAF 文件夹选择器（pickGameFolder）生命周期 ----
+
+    override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+        currentActivity = binding.activity
+        binding.addActivityResultListener(this)
+    }
+
+    override fun onDetachedFromActivityForConfigChanges() {
+        currentActivity = null
+    }
+
+    override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+        currentActivity = binding.activity
+        binding.addActivityResultListener(this)
+    }
+
+    override fun onDetachedFromActivity() {
+        currentActivity = null
+        // 选择器进行中 Activity 被拆：直接取消，避免悬挂 Result。
+        pendingFolderResult?.success(mapOf("ok" to false, "message" to "已取消"))
+        pendingFolderResult = null
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?): Boolean {
+        if (requestCode != REQUEST_PICK_GAME_FOLDER) return false
+        val result = pendingFolderResult ?: return true
+        pendingFolderResult = null
+        val uri = data?.data
+        if (resultCode != Activity.RESULT_OK || uri == null) {
+            result.success(mapOf("ok" to false, "message" to "已取消"))
+            return true
+        }
+        // 持久化授权：重启后仍可经 /storage 直路径读取（Android 11+ FUSE 落地）。
+        try {
+            currentActivity?.contentResolver?.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        } catch (_: SecurityException) {
+            // 部分 ROM 不发持久化授权：当次会话仍可用。
+        }
+        val path = resolveRealPath(uri)
+        var readable = false
+        if (path != null) {
+            val dir = File(path)
+            // list()==null 即不可枚举（EACCES），Android 10 直路径受限场景。
+            readable = dir.isDirectory && dir.canRead() && dir.list() != null
+        }
+        val name = folderDisplayName(uri)
+        result.success(
+            mapOf(
+                "ok" to true,
+                "uri" to uri.toString(),
+                "path" to path,
+                "name" to name,
+                "readable" to readable,
+                "message" to if (readable) null
+                else "该文件夹无法直接读取（Android 10 共享目录限制）。"
+            )
+        )
+        return true
+    }
+
+    /**
+     * SAF 树 URI → 真实文件系统路径（原生核心与本地 HTTP 服务都需要直路径）。
+     * 文档 ID 形如 "primary:Games/Foo" / "XXXX-XXXX:demos"。
+     */
+    private fun resolveRealPath(treeUri: Uri): String? {
+        return try {
+            val docId = DocumentsContract.getTreeDocumentId(treeUri)
+            val colon = docId.indexOf(':')
+            if (colon <= 0) return null
+            val volume = docId.substring(0, colon)
+            val rel = docId.substring(colon + 1)
+            val base = if (volume == "primary") {
+                @Suppress("DEPRECATION")
+                Environment.getExternalStorageDirectory().absolutePath
+            } else {
+                "/storage/$volume"
+            }
+            if (rel.isBlank()) base else base + "/" + rel
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun folderDisplayName(treeUri: Uri): String {
+        val path = resolveRealPath(treeUri) ?: return "文件夹"
+        val segs = path.split('/').filter { it.isNotBlank() }
+        return segs.lastOrNull() ?: "文件夹"
+    }
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "probeEngines" -> result.success(mapOf("engines" to EngineHost.probeAll()))
@@ -91,7 +202,32 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             "command" -> handleCommand(call, result)
             "pushInput" -> handlePushInput(call, result)
             "surfaceSize" -> handleSurfaceSize(call, result)
+            "pickGameFolder" -> handlePickGameFolder(result)
             else -> result.notImplemented()
+        }
+    }
+
+    /** SAF 选择游戏文件夹：ACTION_OPEN_DOCUMENT_TREE，返回 {uri,path,name,readable}。 */
+    private fun handlePickGameFolder(result: MethodChannel.Result) {
+        val act = currentActivity
+        if (act == null) {
+            result.success(mapOf("ok" to false, "message" to "宿主 Activity 未就绪，请稍后再试"))
+            return
+        }
+        if (pendingFolderResult != null) {
+            result.success(mapOf("ok" to false, "message" to "已有文件夹选择器进行中"))
+            return
+        }
+        pendingFolderResult = result
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }
+        try {
+            act.startActivityForResult(intent, REQUEST_PICK_GAME_FOLDER)
+        } catch (t: Throwable) {
+            pendingFolderResult = null
+            result.success(mapOf("ok" to false, "message" to "无法打开系统文件夹选择器：${t.message}"))
         }
     }
 
@@ -153,8 +289,15 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
             return
         }
 
-        val probe = EngineHost.probe(engineId)
-        if (probe["available"] != true) {
+        // 启动时才真正装载（bridge + core + SDL 引导）；
+        // 失败全部走 CORE_NOT_BUNDLED 可恢复路径，绝不崩 App。
+        val nativeReady = try {
+            EngineHost.ensureNative(engineId)
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.w("LusicgalEngines", "装载核心失败（$engineId）：$e")
+            false
+        }
+        if (!nativeReady) {
             postEvent(
                 mapOf(
                     "type" to "core_missing",
@@ -165,7 +308,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler {
                 mapOf(
                     "ok" to false,
                     "errorCode" to "CORE_NOT_BUNDLED",
-                    "message" to (probe["message"] ?: "核心未打包")
+                    "message" to "核心库不可用（liblusicgal_$engineId.so 缺失或链接失败）"
                 )
             )
             return
@@ -364,25 +507,39 @@ object EngineHost {
                 "message" to null
             )
         }
-        if (!ensureBridge()) {
-            return unavailable(engineId, "桥库 liblusicgal_bridge.so 未打包（该 ABI 未构建）")
+        // 2026-10-19 打开闪退修复：探测绝不再 System.loadLibrary。
+        // 旧实现经 IndexedStack（书库/存档/引擎/设置四页同时构建）在 App 启动即
+        // 连环 dlopen 九个核心（engine_api 45MB、双 SDL、Oboe 初始化……），
+        // 任何一环在老系统（Android 10 实测）上失败/崩溃 = 整个 App 打开闪退。
+        // 改为 nativeLibraryDir 存在性检查（纯文件操作，零链接、零崩溃面）；
+        // 真正装载只发生在 handleLaunch（用户点"开始游戏"时）。
+        if (coreFile(engineId) == null) {
+            return unavailable(engineId, "核心库未打包（liblusicgal_$engineId.so 不在包内）")
         }
-        ensureCore(engineId)
-        return try {
-            val abi = CoreNative.coreAbiVersion(engineId)
-            if (CoreNative.probeCore(engineId) == 1 && abi > 0) {
-                mapOf(
-                    "engineId" to engineId,
-                    "available" to true,
-                    "version" to "0x%08x".format(abi),
-                    "message" to null
-                )
-            } else {
-                unavailable(engineId, "核心库未装载（liblusicgal_$engineId.so 未打包进 APK）")
-            }
-        } catch (e: UnsatisfiedLinkError) {
-            unavailable(engineId, "桥库入口缺失：${e.message}")
-        }
+        return mapOf(
+            "engineId" to engineId,
+            "available" to true,
+            "version" to "bundled",
+            "message" to null
+        )
+    }
+
+    /** 包内核心 .so 是否存在（nativeLibraryDir 纯文件检查；不触发链接）。 */
+    private fun coreFile(engineId: String): File? {
+        val dir = appContext?.applicationInfo?.nativeLibraryDir ?: return null
+        val f = File(dir, "liblusicgal_$engineId.so")
+        return if (f.isFile) f else null
+    }
+
+    /**
+     * 启动时装载原生核心（bridge + core + SDL 音频 JNI 引导）。
+     * 只在 handleLaunch 调用 —— 探测（probe）已改为零装载。
+     * 返回 false = 不可用（.so 缺失或链接失败，全部可恢复，不崩 App）。
+     */
+    fun ensureNative(engineId: String): Boolean {
+        if (coreFile(engineId) == null) return false
+        if (!ensureBridge()) return false
+        return ensureCore(engineId)
     }
 
     private fun unavailable(engineId: String, message: String): Map<String, Any?> = mapOf(
