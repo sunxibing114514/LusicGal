@@ -36,7 +36,8 @@ import java.io.File
  *   不可用时为原生占位视图。
  */
 class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
-    ActivityAware, io.flutter.plugin.common.PluginRegistry.ActivityResultListener {
+    ActivityAware, io.flutter.plugin.common.PluginRegistry.ActivityResultListener,
+    io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener {
 
     private var methodChannel: MethodChannel? = null
     private var eventChannel: EventChannel? = null
@@ -88,6 +89,12 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         } catch (_: UnsatisfiedLinkError) {
             // 桥缺失时跳过（核心加载各自的 init_context 由壳自行兜底）。
         }
+        // 装载所有库（用户指令）：后台线程预装载全部核心（带崩溃环护）。
+        try {
+            EngineHost.preloadAll(binding.applicationContext)
+        } catch (_: Throwable) {
+            // 预装载失败不影响 App —— 懒装载兜底。
+        }
     }
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -105,6 +112,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
     override fun onAttachedToActivity(binding: ActivityPluginBinding) {
         currentActivity = binding.activity
         binding.addActivityResultListener(this)
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivityForConfigChanges() {
@@ -114,6 +122,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
     override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
         currentActivity = binding.activity
         binding.addActivityResultListener(this)
+        binding.addRequestPermissionsResultListener(this)
     }
 
     override fun onDetachedFromActivity() {
@@ -156,7 +165,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                 "name" to name,
                 "readable" to readable,
                 "message" to if (readable) null
-                else "该文件夹无法直接读取（Android 10 共享目录限制）。"
+                else "该文件夹无法直接读取（存储权限未授予或设备限制）。"
             )
         )
         return true
@@ -215,6 +224,31 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             return
         }
         pendingFolderResult = result
+        // 外部目录全系统直读（用户指令）：targetSdk 29 + legacy 存储模型下，
+        // 共享目录直读需运行时 READ 权限（Android 6+）。申请后无论授予与否
+        // 都继续 SAF 选择 —— SAF 流不需要该权限；授予则直路径探测在
+        // Android 10 上也能通过（v0.1.2 降级路径就此消除）。
+        try {
+            if (act.checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                act.requestPermissions(
+                    arrayOf(android.Manifest.permission.READ_EXTERNAL_STORAGE),
+                    REQUEST_PERM_STORAGE
+                )
+                return // onRequestPermissionsResult 里接续发选择器。
+            }
+        } catch (_: Throwable) {
+            // 权限 API 异常（极旧 ROM）—— 直接进选择器。
+        }
+        launchFolderPicker()
+    }
+
+    private fun launchFolderPicker() {
+        val act = currentActivity ?: run {
+            pendingFolderResult?.success(mapOf("ok" to false, "message" to "宿主 Activity 未就绪"))
+            pendingFolderResult = null
+            return
+        }
         val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
@@ -222,9 +256,20 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         try {
             act.startActivityForResult(intent, REQUEST_PICK_GAME_FOLDER)
         } catch (t: Throwable) {
+            pendingFolderResult?.success(
+                mapOf("ok" to false, "message" to "无法打开系统文件夹选择器：${t.message}")
+            )
             pendingFolderResult = null
-            result.success(mapOf("ok" to false, "message" to "无法打开系统文件夹选择器：${t.message}"))
         }
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int, permissions: Array<out String>, grantResults: IntArray
+    ): Boolean {
+        if (requestCode != REQUEST_PERM_STORAGE) return false
+        // 无论授予与否继续选择器流程（SAF 本身不依赖该权限）。
+        launchFolderPicker()
+        return true
     }
 
     private fun handleLaunch(call: MethodCall, result: MethodChannel.Result) {
@@ -402,6 +447,9 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         /** SAF 选游戏文件夹的 startActivityForResult 请求码。 */
         private const val REQUEST_PICK_GAME_FOLDER = 47001
 
+        /** 外部目录 READ 权限的 requestPermissions 请求码。 */
+        private const val REQUEST_PERM_STORAGE = 47002
+
         /** 当前活动会话的引擎 id（由 launch 设置；命令/输入路由用）。 */
         @Volatile
         var engineIdHolder: String? = null
@@ -539,6 +587,52 @@ object EngineHost {
         if (coreFile(engineId) == null) return false
         if (!ensureBridge()) return false
         return ensureCore(engineId)
+    }
+
+    /**
+     * 装载所有库（用户指令）：App 启动时后台线程把 7 个桥接核心全部
+     * dlopen 完成 —— 游戏点击即启、缺失/损坏提前暴露。
+     *
+     * 崩溃环护（自愈安全模式）：装载前写 started 标记，全部完成后清除。
+     * 若上次运行在中途进程死亡（native 初始化崩溃无法被 try/catch 拦截），
+     * 本次启动看到残留标记 → 写 lg_eager_disabled 并从此禁用预装载
+     * （懒装载不受影响，游戏仍可玩），杜绝"隔次启动必崩"的环。
+     *
+     * Ren'Py 外板壳（librenpython.so）不在此列：其生命周期由
+     * RenpyGameActivity 全权管理（route-b 架构），进程内由 Activity
+     * 首次启动时装载。
+     */
+    fun preloadAll(context: Context) {
+        val files = context.applicationContext.filesDir
+        val started = File(files, "lg_eager_started")
+        val disabled = File(files, "lg_eager_disabled")
+        if (disabled.exists()) return
+        if (started.exists()) {
+            // 上次预装载中途死亡 —— 关闭预装载（懒装载仍可用）。
+            started.delete()
+            try { disabled.writeText("1") } catch (_: Throwable) {}
+            android.util.Log.w("LusicgalEngines", "检测到上次预装载中断，本轮禁用预装载")
+            return
+        }
+        Thread({
+            try { started.writeText("1") } catch (_: Throwable) {}
+            for (id in listOf(
+                "kirikiri", "onscripter", "siglus", "rfvp",
+                "sena", "xsystem35", "artemis"
+            )) {
+                try {
+                    ensureNative(id)
+                } catch (t: Throwable) {
+                    android.util.Log.w("LusicgalEngines", "预装载 $id 失败：$t")
+                }
+            }
+            started.delete()
+            try { File(files, "lg_eager_ok").writeText("1") } catch (_: Throwable) {}
+            android.util.Log.i("LusicgalEngines", "预装载完成（所有库已装载）")
+        }, "LusicgalPreload").apply {
+            isDaemon = true
+            start()
+        }
     }
 
     private fun unavailable(engineId: String, message: String): Map<String, Any?> = mapOf(

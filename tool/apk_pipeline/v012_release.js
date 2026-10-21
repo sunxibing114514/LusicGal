@@ -16,8 +16,9 @@ const AAPT2 = 'C:\\LusicGal\\.toolchain\\android-sdk\\build-tools\\android-14\\a
 const TOK = process.env.LGT;
 const REPO_URL = `https://x-access-token:${TOK}@github.com/sunxibing114514/LusicGal.git`;
 const REPO = 'sunxibing114514/LusicGal';
-const TAG = 'v0.1.2-full-core';
-const APK_OUT = 'C:\\LusicGal\\.toolchain\\LusicGal-v0.1.2-full-core.apk';
+// tag 可经 LGT_TAG 覆盖（默认 v0.1.2-full-core 保持向后兼容）。
+const TAG = process.env.LGT_TAG || 'v0.1.2-full-core';
+const APK_OUT = `C:\\LusicGal\\.toolchain\\LusicGal-${TAG}.apk`;
 const REPORT = 'C:\\LusicGal\\build\\v012_report.json';
 const START = Date.now();
 const log = (m) => console.log(new Date().toISOString().slice(11, 19), m);

@@ -82,8 +82,8 @@ class _ImportSheetState extends State<ImportSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
               child: Text(
-                '支持共享目录（Download 等）与 App 专属目录。'
-                'Android 10 共享目录受限时，请把游戏文件夹移入 App 专属目录后从下方列表导入。',
+                '支持共享目录（Download 等）与 App 专属目录，全系统版本即选即玩。'
+                '首次选择时会请求存储权限，请选择"允许"。',
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.outline,
                     ),

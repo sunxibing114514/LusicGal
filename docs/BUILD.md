@@ -217,6 +217,26 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 - **默认横屏**：RenpyGameActivity manifest `sensorLandscape`；播放器页
   进/出横屏锁定与恢复；WebGameActivity 本就横屏。
 
+### v0.1.3 轮（用户指令：装载所有库 + 外部目录全系统可用）
+
+- **targetSdk 固定 29 + `requestLegacyExternalStorage="true"`**（patch_platform
+  `patch_target_sdk_legacy` + App manifest）：v0.1.2 的 SAF 直路径探测在
+  Android 10 上因共享目录直路径封锁而降级提示；legacy 存储模型让共享目录
+  直读在**所有 Android 版本**成立 —— Android 10 按 legacy 规则 + 运行时
+  READ 权限直读；Android 11+ 按 Google 迁移过渡政策对 targetSdk≤29 的 App
+  继续授予 legacy 访问（Android 13+ 的 legacy App 共享存储读权仍是
+  READ_EXTERNAL_STORAGE，故 manifest 不设 maxSdkVersion；侧载分发不受
+  Play targetSdk 上限约束）。
+- **装载所有库**：`EngineHost.preloadAll` 在 App 启动时后台线程把 7 个
+  桥接核心（kirikiri/onscripter/siglus/rfvp/sena/xsystem35/artemis）全部
+  dlopen 完成 —— 游戏点击即启、缺失提前暴露。**崩溃环护**（自愈安全模式）：
+  started + disabled 双标记文件，native 初始化崩溃（try/catch 不可拦）
+  最多损失一次启动，此后自动永久退回懒装载（游戏照常可玩），杜绝隔次启动
+  崩溃环。Ren'Py 外板壳（librenpython.so）生命周期归 RenpyGameActivity
+  管理，不参与预装载（route-b 架构约束）。
+- pickGameFolder 先申请 READ 运行时权限再开 SAF 选择器（授予与否都继续 ——
+  SAF 流本身不依赖权限，授予则直路径探测在全系统通过）。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

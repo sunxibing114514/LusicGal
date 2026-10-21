@@ -252,11 +252,47 @@ def patch_renpy_module(root: str) -> None:
         break
 
 
+def patch_target_sdk_legacy(root: str) -> None:
+    """targetSdk 固定 29 + requestLegacyExternalStorage（用户指令：所有
+    Android 版本都要能直接读取共享目录里的游戏文件夹）。
+
+    背景：API 30+ 的 FUSE 直路径中介对 SAF 授权目录生效，但 Android 10
+    设备上（app targetSdk≥30）共享目录直路径一律 EACCES —— SAF 授权也
+    无济于事，v0.1.2 因此在 Android 10 降级提示。targetSdk 29 +
+    requestLegacyExternalStorage=true 让 App 走旧存储模型：Android 10
+    及以下按旧规则（运行时 READ 权限）直读，Android 11+ 按 Google 迁移
+    过渡政策对 targetSdk≤29 的 App 继续授予 legacy 访问 —— 即"所有
+    系统"共享目录直路径全部可用（侧载分发不受 Play targetSdk 上限约束）。
+    """
+    app_dir = os.path.join(root, 'android', 'app')
+    if not os.path.isdir(app_dir):
+        print('patch_platform: 未找到 android/app（targetSdk 补丁跳过）')
+        return
+    done = False
+    for name in ('build.gradle.kts', 'build.gradle'):
+        p = os.path.join(app_dir, name)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        patched = src.replace('targetSdk = flutter.targetSdkVersion', 'targetSdk = 29')
+        patched = patched.replace('targetSdk flutter.targetSdkVersion', 'targetSdk 29')
+        if patched != src:
+            with open(p, 'w', encoding='utf-8') as f:
+                f.write(patched)
+            print(f'patch_platform: {name} targetSdk → 29（legacy 外部目录直读）')
+            done = True
+            break
+    if not done:
+        print('patch_platform: Gradle 未发现 flutter.targetSdkVersion（模板可能已变）')
+
+
 if __name__ == '__main__':
     project_root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     patch_ios(project_root)
     patch_android(project_root)
     patch_android_gradle(project_root)
+    patch_target_sdk_legacy(project_root)
     patch_release_minify(project_root)
     patch_engine_cores(project_root)
     patch_renpy_module(project_root)
