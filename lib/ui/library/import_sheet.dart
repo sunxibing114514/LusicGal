@@ -302,8 +302,7 @@ class _ImportSheetState extends State<ImportSheet> {
                     ),
                     subtitle: Text(
                       entry.value.engineDetail ??
-                          entry.value.engine?.label ??
-                          '',
+                          entry.value.engine.label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
