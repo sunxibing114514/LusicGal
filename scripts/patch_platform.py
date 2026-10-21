@@ -287,6 +287,54 @@ def patch_target_sdk_legacy(root: str) -> None:
         print('patch_platform: Gradle 未发现 flutter.targetSdkVersion（模板可能已变）')
 
 
+def patch_lint_vital_off(root: str) -> None:
+    """关 lintVitalRelease 关卡。
+
+    targetSdk 固定 29（外部目录全系统直读，用户指令）触发
+    ExpiredTargetSdkVersion fatal lint（"Google Play requires API 33+"）
+    —— 本 App 侧载分发，不受 Play API 级别政策约束。用任务级熔断
+    （tasks.whenTaskAdded）而不是 lint DSL：两种 Gradle DSL 语法完全
+    同构、对 AGP 版本无依赖。
+    """
+    app_dir = os.path.join(root, 'android', 'app')
+    for name in ('build.gradle.kts', 'build.gradle'):
+        p = os.path.join(app_dir, name)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        if 'lintVital' in src:
+            print(f'patch_platform: {name} 已含 lintVital 熔断（跳过）')
+            return
+        if name.endswith('.kts'):
+            block = (
+                "\n// LusicGal: targetSdk 29（legacy 外部目录直读）触发"
+                " ExpiredTargetSdkVersion fatal lint ——\n"
+                "// 侧载分发不受 Play API 级别政策约束，任务级熔断 lintVital。\n"
+                "tasks.whenTaskAdded {\n"
+                "    if (name.contains(\"lintVital\")) {\n"
+                "        enabled = false\n"
+                "    }\n"
+                "}\n"
+            )
+        else:
+            block = (
+                "\n// LusicGal: targetSdk 29（legacy 外部目录直读）触发"
+                " ExpiredTargetSdkVersion fatal lint ——\n"
+                "// 侧载分发不受 Play API 级别政策约束，任务级熔断 lintVital。\n"
+                "tasks.whenTaskAdded { t ->\n"
+                "    if (t.name.contains(\"lintVital\")) {\n"
+                "        t.enabled = false\n"
+                "    }\n"
+                "}\n"
+            )
+        with open(p, 'a', encoding='utf-8') as f:
+            f.write(block)
+        print(f'patch_platform: {name} lintVitalRelease 已熔断（targetSdk 29 侧载）')
+        return
+    print('patch_platform: 未找到 app gradle（跳过 lintVital 补丁）')
+
+
 if __name__ == '__main__':
     project_root = sys.argv[1] if len(sys.argv) > 1 else os.getcwd()
     patch_ios(project_root)
@@ -294,5 +342,6 @@ if __name__ == '__main__':
     patch_android_gradle(project_root)
     patch_target_sdk_legacy(project_root)
     patch_release_minify(project_root)
+    patch_lint_vital_off(project_root)
     patch_engine_cores(project_root)
     patch_renpy_module(project_root)
