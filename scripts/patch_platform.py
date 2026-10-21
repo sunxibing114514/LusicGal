@@ -45,8 +45,28 @@ def patch_android(root: str) -> None:
     if app is None:
         raise SystemExit('AndroidManifest 缺少 <application> 节点')
     app.set(f'{{{ANDROID_NS}}}largeHeap', 'true')
+    # 外部目录全系统直读（用户指令）：targetSdk 29（patch_target_sdk_legacy）
+    # + legacy 存储模型。flutter create 每次重建平台壳会抹掉壳内手工改动
+    # （CI 实证：直接改已提交 manifest 的 v0.1.3 初版字段全被模板重写吞掉）
+    # —— 一切壳定制必须走本补丁。Android 11+ 对 targetSdk≤29 的 App 按
+    # 迁移过渡政策继续授予 legacy；Android 13+ legacy App 共享存储读权仍是
+    # READ_EXTERNAL_STORAGE（不设 maxSdkVersion）。游戏只读不写共享目录
+    # → WRITE 裁到 29 及以下。
+    app.set(f'{{{ANDROID_NS}}}requestLegacyExternalStorage', 'true')
+    wanted = [
+        ('android.permission.READ_EXTERNAL_STORAGE', None),
+        ('android.permission.WRITE_EXTERNAL_STORAGE', '29'),
+    ]
+    existing = {p.get(f'{{{ANDROID_NS}}}name') for p in root_el.findall('uses-permission')}
+    for perm, max_sdk in wanted:
+        if perm in existing:
+            continue
+        el = ET.SubElement(root_el, 'uses-permission')
+        el.set(f'{{{ANDROID_NS}}}name', perm)
+        if max_sdk:
+            el.set(f'{{{ANDROID_NS}}}maxSdkVersion', max_sdk)
     tree.write(path, encoding='utf-8', xml_declaration=True)
-    print('patch_platform: AndroidManifest 已补丁（largeHeap）')
+    print('patch_platform: AndroidManifest 已补丁（largeHeap + legacy 外部目录直读）')
 
 
 def patch_android_gradle(root: str) -> None:
