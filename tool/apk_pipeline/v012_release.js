@@ -70,9 +70,9 @@ async function waitRuns(sha, deadlineMs, need = ['app', 'engines']) {
 }
 
 (async () => {
-  // ---- 1. push main（浪最长 4.5h）----
+  // ---- 1. push main（浪窗可经 LGT_WAIT_HOURS 扩，默认 4.5h）----
   let pushed = false;
-  const pushDl = Date.now() + 4.5 * 3600 * 1000;
+  const pushDl = Date.now() + parseFloat(process.env.LGT_WAIT_HOURS || '4.5') * 3600 * 1000;
   while (Date.now() < pushDl) {
     const r = git(['push', REPO_URL, 'main']);
     if (r.code === 0) { log('PUSH OK: ' + r.out.trim().split('\n').pop()); pushed = true; break; }
