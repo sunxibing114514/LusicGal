@@ -5,10 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:provider/provider.dart';
 
-import '../../core/detect/engine_detector.dart';
 import '../../core/library/import_service.dart';
 import '../../core/library/library_store.dart';
 import '../../core/models/engine_id.dart';
+import '../../core/models/game_entry.dart';
 import '../../engine/engine_host.dart';
 import '../ui_helpers.dart';
 
