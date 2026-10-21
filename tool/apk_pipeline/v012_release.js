@@ -54,12 +54,15 @@ async function api(pathname, authed = false) {
 async function waitRuns(sha, deadlineMs, need = ['app', 'engines']) {
   const dl = Date.now() + deadlineMs;
   while (Date.now() < dl) {
-    const r = await api(`/repos/${REPO}/actions/runs?head_sha=${sha}&per_page=20`);
+    // 注意：actions API 的 ?head_sha= 过滤有索引滞后（实测 >30min）——
+    // 拉最近 runs 全量后客户端匹配 head_sha 字段。
+    const r = await api(`/repos/${REPO}/actions/runs?per_page=40`);
     if (r.status === 200 && Array.isArray(r.body.workflow_runs)) {
       const runs = r.body.workflow_runs;
       const done = {};
       for (const need_name of need) {
-        const run = runs.find((x) => x.name === need_name);
+        const run = runs.find(
+          (x) => x.name === need_name && (x.head_sha || '').startsWith(sha));
         if (run && run.status === 'completed') done[need_name] = run.conclusion;
       }
       if (Object.keys(done).length === need.length) return done;
