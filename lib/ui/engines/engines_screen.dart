@@ -74,8 +74,9 @@ class _EnginesScreenState extends State<EnginesScreen> {
                         const SizedBox(height: 8),
                         Text(
                           '引擎核心以"可选模块"方式接入：Android 检查包内 '
-                          'liblusicgal_<引擎>.so 是否存在（零装载探测，'
-                          '点"开始游戏"时才真正加载核心），'
+                          'liblusicgal_<引擎>.so 是否存在（零装载探测：已提取'
+                          '目录 + APK 内 zip 条目双探针；启动后台线程会装载'
+                          '全部核心，点"开始游戏"时即点即启），'
                           'iOS 通过 dlsym 探测静态符号。核心缺失不影响 App 其它功能。\n\n'
                           '核心的交叉编译脚本位于 native/engines/<引擎>/，'
                           'CI 尝试任务见 .github/workflows/engines.yml；'

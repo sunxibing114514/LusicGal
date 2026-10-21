@@ -237,6 +237,19 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
 - pickGameFolder 先申请 READ 运行时权限再开 SAF 选择器（授予与否都继续 ——
   SAF 流本身不依赖权限，授予则直路径探测在全系统通过）。
 
+### v0.1.5 轮（v0.1.4 现机双反馈）
+
+- **引擎页只显示 web+renpy（7 个桥接核心全军"未打包"误报）**：Flutter
+  release 默认 `useLegacyPackaging=false` —— .so 不提取到
+  nativeLibraryDir（System.loadLibrary 由 dlopen 直接吃 APK），单一目录
+  文件检查必然全空。`coreBundled` 双探针：已提取路径 + APK 内
+  `lib/<abi>/liblusicgal_<id>.so` zip 条目（ZipFile 只读中央目录，零链接
+  秒回）。probe 与 ensureNative（preloadAll 同路）全部改走双探针。
+- **选择文件夹改为"游戏总目录"语义（用户指令：读取该文件夹下的文件夹）**：
+  先探自身——是游戏则单条收录（原有流程）；不可识别则扫描其一级子文件夹，
+  把识别到游戏的子文件夹列为复选清单（默认全选）批量登记为引用条目
+  （不复制）。全部识别不出时回退单条流程（引擎确认对话框兜底）。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

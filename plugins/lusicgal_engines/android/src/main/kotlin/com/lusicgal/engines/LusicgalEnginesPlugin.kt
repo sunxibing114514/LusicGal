@@ -558,9 +558,9 @@ object EngineHost {
         // 旧实现经 IndexedStack（书库/存档/引擎/设置四页同时构建）在 App 启动即
         // 连环 dlopen 九个核心（engine_api 45MB、双 SDL、Oboe 初始化……），
         // 任何一环在老系统（Android 10 实测）上失败/崩溃 = 整个 App 打开闪退。
-        // 改为 nativeLibraryDir 存在性检查（纯文件操作，零链接、零崩溃面）；
-        // 真正装载只发生在 handleLaunch（用户点"开始游戏"时）。
-        if (coreFile(engineId) == null) {
+        // 改为存在性检查（零链接、零崩溃面）；真正装载只发生在 handleLaunch
+        // （用户点"开始游戏"时）与 preloadAll（启动后台线程）。
+        if (!coreBundled(engineId)) {
             return unavailable(engineId, "核心库未打包（liblusicgal_$engineId.so 不在包内）")
         }
         return mapOf(
@@ -571,11 +571,33 @@ object EngineHost {
         )
     }
 
-    /** 包内核心 .so 是否存在（nativeLibraryDir 纯文件检查；不触发链接）。 */
-    private fun coreFile(engineId: String): File? {
-        val dir = appContext?.applicationInfo?.nativeLibraryDir ?: return null
-        val f = File(dir, "liblusicgal_$engineId.so")
-        return if (f.isFile) f else null
+    /**
+     * 包内核心 .so 是否存在（零链接探测）。
+     *
+     * v0.1.4 现机实测教训：Flutter release 默认 useLegacyPackaging=false
+     * —— .so 不提取到 nativeLibraryDir（System.loadLibrary 由 dlopen
+     * 直接吃 APK），单一目录检查让 7 个桥接核心全军误报"未打包"
+     * （引擎页只显示 web + renpy）。双探针兜底全形态：
+     * 1) nativeLibraryDir 已提取路径（extractNativeLibs=true 变体/ROM）；
+     * 2) APK 内 lib/<abi>/ zip 条目（默认形态；ZipFile 只读中央目录索引，
+     *    秒回、零链接）。
+     */
+    private fun coreBundled(engineId: String): Boolean {
+        val ctx = appContext ?: return false
+        val name = "liblusicgal_$engineId.so"
+        val dir = ctx.applicationInfo?.nativeLibraryDir
+        if (dir != null && File(dir, name).isFile) return true
+        val apk = ctx.applicationInfo?.sourceDir ?: return false
+        return try {
+            java.util.zip.ZipFile(apk).use { zip ->
+                for (abi in android.os.Build.SUPPORTED_ABIS) {
+                    if (zip.getEntry("lib/$abi/$name") != null) return true
+                }
+                false
+            }
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     /**
@@ -584,7 +606,7 @@ object EngineHost {
      * 返回 false = 不可用（.so 缺失或链接失败，全部可恢复，不崩 App）。
      */
     fun ensureNative(engineId: String): Boolean {
-        if (coreFile(engineId) == null) return false
+        if (!coreBundled(engineId)) return false
         if (!ensureBridge()) return false
         return ensureCore(engineId)
     }
