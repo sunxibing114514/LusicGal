@@ -53,10 +53,6 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
     @Volatile
     private var pendingFolderResult: MethodChannel.Result? = null
 
-    companion object {
-        private const val REQUEST_PICK_GAME_FOLDER = 47001
-    }
-
     override fun onAttachedToEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         context = binding.applicationContext
         EngineHost.appContext = binding.applicationContext
@@ -402,6 +398,9 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         const val METHOD_CHANNEL = "lusicgal/engines"
         const val EVENT_CHANNEL = "lusicgal/engineEvents"
         const val VIEW_TYPE = "lusicgal-engine-view"
+
+        /** SAF 选游戏文件夹的 startActivityForResult 请求码。 */
+        private const val REQUEST_PICK_GAME_FOLDER = 47001
 
         /** 当前活动会话的引擎 id（由 launch 设置；命令/输入路由用）。 */
         @Volatile
