@@ -271,6 +271,25 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
   单游戏布局（renpy 的 game/、RPGMV 的 js/）由"无外部自信子文件夹 +
   根递归自信 → 单游戏"兜住；全无特征时弹"整夹收录"询问。
 
+### v0.1.7 轮（v0.1.6 现机反馈：装载了库仍无法启动）
+
+- **会话泄漏环（病根坐实）**：C 侧 `g_session` 只有 `CoreNative.shutdown()`
+  会清，而 Dart 的退出路径走 `command("stop")`、从不清会话；加上
+  PlayerScreen.dispose 的 `elapsed>0` 门槛（秒退不 stop）—— 第一次
+  启动成功后退出，会话永活，之后每次启动 `session_alive()` →
+  **-2 INVALID_STATE，"无法启动"**。三重修复：
+  1. Kotlin `handleCommand`：`stop` 命令转发后立刻 `shutdown()`（幂等）
+     并清 engineIdHolder；
+  2. `handleLaunch`：launch 返回 -2 → 自动 shutdown 后重试一次（自愈
+     任何历史泄漏）；
+  3. Dart `PlayerScreen.dispose`：stop 无条件调用（elapsed>0 门槛只留
+     给游玩统计）。
+- **失败原因全透传（下轮报障可直接定位）**：ensureBridge/ensureCore
+  捕获的 dlopen 错误原文进 `EngineHost.lastLoadError` →
+  CORE_NOT_BUNDLED 消息带真因；lg_result_t 返回码人话化
+  （-4=打开游戏文件失败 等）；装载结果落盘 `lg_preload_<id>.txt`，
+  probe 读出 → 引擎页直接显示"已打包但装载失败：\<dlopen 错误原文\>"。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

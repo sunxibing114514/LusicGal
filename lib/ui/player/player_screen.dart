@@ -107,17 +107,19 @@ class _PlayerScreenState extends State<PlayerScreen> {
     final host = _host;
     final store = _store;
     final gameId = widget.game.id;
-    if (elapsed.inSeconds > 0) {
-      // 引擎停止与游玩统计在后台完成（不影响页面关闭动画）。
-      scheduleMicrotask(() async {
-        try {
-          await host.stop();
-        } on Exception {
-          // 平台通道不可用（测试环境）—— 忽略。
-        }
+    // v0.1.7 会话泄漏修复：stop 无条件调用 —— C 侧会话只有 shutdown 会清，
+    // 旧版 elapsed>0 门槛让秒退（启动失败黑屏即退）永远漏掉会话销毁，
+    // 之后每次启动都 -2。游玩统计仍按 elapsed>0 记。
+    scheduleMicrotask(() async {
+      try {
+        await host.stop();
+      } on Exception {
+        // 平台通道不可用（测试环境）—— 忽略。
+      }
+      if (elapsed.inSeconds > 0) {
         await store.recordPlay(gameId, elapsed);
-      });
-    }
+      }
+    });
     super.dispose();
   }
 

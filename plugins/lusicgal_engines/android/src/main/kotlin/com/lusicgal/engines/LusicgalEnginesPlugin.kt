@@ -337,6 +337,9 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         } catch (e: UnsatisfiedLinkError) {
             android.util.Log.w("LusicgalEngines", "装载核心失败（$engineId）：$e")
             false
+        } catch (t: Throwable) {
+            android.util.Log.w("LusicgalEngines", "装载核心异常（$engineId）：$t")
+            false
         }
         if (!nativeReady) {
             postEvent(
@@ -345,11 +348,12 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
                     "data" to mapOf("engineId" to engineId, "gameId" to gameId)
                 )
             )
+            val why = EngineHost.lastLoadError ?: "未知原因"
             result.success(
                 mapOf(
                     "ok" to false,
                     "errorCode" to "CORE_NOT_BUNDLED",
-                    "message" to "核心库不可用（liblusicgal_$engineId.so 缺失或链接失败）"
+                    "message" to "核心库装载失败：$why"
                 )
             )
             return
@@ -357,7 +361,7 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         // 核心已链接：启动参数序列化为 JSON 转交核心 JNI 入口
         // （native/bridge/jni，与 engine_abi.h 的 desc.options_json 对应）。
         val optionsJson = JSONObject(options).toString()
-        val code = try {
+        var code = try {
             CoreNative.launch(engineId, gameId, gamePath, savePath, optionsJson)
         } catch (e: UnsatisfiedLinkError) {
             result.success(
@@ -369,15 +373,51 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
             )
             return
         }
+        if (code == -2) {
+            // 会话泄漏自愈（v0.1.7 病根修复）：C 侧 g_session 只有 shutdown()
+            // 会清 —— 旧版 Dart 从不调它，退出后再启动必 -2。清掉重试一次。
+            android.util.Log.w("LusicgalEngines", "launch -2（残留会话），shutdown 后重试")
+            try {
+                CoreNative.shutdown()
+            } catch (_: Throwable) {
+            }
+            code = try {
+                CoreNative.launch(engineId, gameId, gamePath, savePath, optionsJson)
+            } catch (e: UnsatisfiedLinkError) {
+                result.success(
+                    mapOf(
+                        "ok" to false,
+                        "errorCode" to "CORE_ENTRY_MISSING",
+                        "message" to "核心库已加载但入口符号缺失：${e.message}"
+                    )
+                )
+                return
+            }
+        }
         if (code == 0) {
             LusicgalEnginesPlugin.engineIdHolder = engineId
         }
         result.success(
             mapOf(
                 "ok" to (code == 0),
-                "message" to if (code == 0) null else "核心返回码 $code"
+                "message" to if (code == 0) null else launchErrorLabel(code)
             )
         )
+    }
+
+    /** lg_result_t（engine_abi.h）→ 用户可读的失败原因。 */
+    private fun launchErrorLabel(code: Int): String {
+        val what = when (code) {
+            -1 -> "启动参数无效（-1）"
+            -2 -> "已有游戏会话未结束（-2，已自动清理仍失败请重启 App）"
+            -3 -> "核心不支持该操作（-3）"
+            -4 -> "打开游戏文件失败（-4：路径不可读或关键文件缺失）"
+            -5 -> "核心内部错误（-5）"
+            -6 -> "资源未找到（-6）"
+            -7 -> "核心启动超时（-7）"
+            else -> "核心返回码 $code"
+        }
+        return what
     }
 
     private fun handleCommand(call: MethodCall, result: MethodChannel.Result) {
@@ -389,6 +429,16 @@ class LusicgalEnginesPlugin : FlutterPlugin, MethodChannel.MethodCallHandler,
         val argsJson = JSONObject(args).toString()
         try {
             CoreNative.command(engineIdHolder ?: "unknown", command, argsJson)
+            if (command == "stop") {
+                // stop = 会话终结（v0.1.7 会话泄漏修复）：C 侧 g_session 只有
+                // shutdown() 会清 —— Dart 的 stop 走 command 通道从不清会话，
+                // 退出后再启动必 -2。stop 后立刻销毁会话（幂等）。
+                try {
+                    CoreNative.shutdown()
+                } catch (_: Throwable) {
+                }
+                engineIdHolder = null
+            }
             result.success(null)
         } catch (e: UnsatisfiedLinkError) {
             // 没有活动会话（核心未打包 / 未启动）—— 静默忽略，命令幂等。
@@ -487,6 +537,11 @@ object EngineHost {
     /** 每核心 .so 装载结果缓存（loadLibrary 只允许成功一次）。 */
     private val coreLoaded = mutableMapOf<String, Boolean>()
 
+    /** 最近一次装载失败的真实原因（dlopen 错误原文；成功为 null）。 */
+    @Volatile
+    var lastLoadError: String? = null
+        private set
+
     private fun ensureBridge(): Boolean {
         if (bridgeLoaded) return true
         return try {
@@ -494,6 +549,12 @@ object EngineHost {
             bridgeLoaded = true
             true
         } catch (e: UnsatisfiedLinkError) {
+            lastLoadError = "bridge: $e"
+            android.util.Log.w("LusicgalEngines", "装载 bridge 失败：$e")
+            false
+        } catch (t: Throwable) {
+            lastLoadError = "bridge: $t"
+            android.util.Log.w("LusicgalEngines", "装载 bridge 失败：$t")
             false
         }
     }
@@ -505,11 +566,30 @@ object EngineHost {
             System.loadLibrary("lusicgal_$engineId")
             true
         } catch (e: UnsatisfiedLinkError) {
+            lastLoadError = "lusicgal_$engineId: $e"
+            android.util.Log.w("LusicgalEngines", "装载核心 $engineId 失败：$e")
+            false
+        } catch (t: Throwable) {
+            lastLoadError = "lusicgal_$engineId: $t"
+            android.util.Log.w("LusicgalEngines", "装载核心 $engineId 失败：$t")
             false
         }
         if (ok) bootstrapSdl(engineId)
         coreLoaded[engineId] = ok
+        writePreloadResult(engineId, ok)
         return ok
+    }
+
+    /** 预装载结果落盘（引擎页可见；用户报障时可直接读出真实原因）。 */
+    private fun writePreloadResult(engineId: String, ok: Boolean) {
+        try {
+            val f = File(
+                appContext?.applicationContext?.filesDir,
+                "lg_preload_$engineId.txt"
+            )
+            f.writeText(if (ok) "ok" else (lastLoadError ?: "装载失败"))
+        } catch (_: Throwable) {
+        }
     }
 
     /**
@@ -563,12 +643,30 @@ object EngineHost {
         if (!coreBundled(engineId)) {
             return unavailable(engineId, "核心库未打包（liblusicgal_$engineId.so 不在包内）")
         }
-        return mapOf(
-            "engineId" to engineId,
-            "available" to true,
-            "version" to "bundled",
-            "message" to null
-        )
+        // 预装载/最近装载的真实结果（预装载线程或上次启动写入）。
+        val loadNote = try {
+            File(
+                appContext?.applicationContext?.filesDir,
+                "lg_preload_$engineId.txt"
+            ).takeIf { it.isFile }?.readText()?.trim()
+        } catch (_: Throwable) {
+            null
+        }
+        return if (loadNote != null && loadNote != "ok") {
+            mapOf(
+                "engineId" to engineId,
+                "available" to true,
+                "version" to "bundled",
+                "message" to "已打包，但装载失败：$loadNote"
+            )
+        } else {
+            mapOf(
+                "engineId" to engineId,
+                "available" to true,
+                "version" to if (loadNote == "ok") "loaded" else "bundled",
+                "message" to null
+            )
+        }
     }
 
     /**
