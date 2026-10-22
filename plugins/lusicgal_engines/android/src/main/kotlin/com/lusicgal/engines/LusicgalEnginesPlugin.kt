@@ -804,6 +804,10 @@ internal object CoreNative {
     /** v2：注册应用上下文（音频栈初始化用；onAttachedToEngine 调一次）。 */
     @JvmStatic
     external fun initAndroid(context: Any)
+
+    /** 会话终结（幂等）：向核心发 stop 命令 + destroy + 清 g_session。 */
+    @JvmStatic
+    external fun shutdown(): Int
 }
 
 /**
