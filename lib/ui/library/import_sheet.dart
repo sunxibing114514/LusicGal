@@ -168,10 +168,37 @@ class _ImportSheetState extends State<ImportSheet> {
     );
   }
 
+  /// 根级强特征：游戏本体的主特征文件必在自身根上（data.xp3、nscript.dat、
+  /// tyrano.js、Scene.pck、*.rpa 所在的 game/ 属例外——由内部目录名单兜底）。
+  /// 必须先于递归探测判断：总目录的子游戏证据会污染根目录自身的
+  /// detect 结论（v0.1.5 现机实测病根——根目录递归扫到子游戏后 confident，
+  /// 单条分支吞掉批量清单）。
+  static final RegExp _strongRootFile = RegExp(
+    r'^('
+    r'.*\.xp3|.*\.nsa|.*\.rpa|.*\.ald|.*\.nvsg|.*\.hcb|.*\.pac|'
+    r'nscript\.dat|0\.txt|00\.txt|tyrano\.js|app\.asar|scene\.pck|'
+    r'gameexe\.dat|gameexe\.ini|uk2\.cfg|seen\.txt|startup\.tjs|'
+    r'rpg_core\.js|rmmz_core\.js|plugins\.js'
+    r')$',
+    caseSensitive: false,
+  );
+
+  /// 引擎运行时/资源目录名：出现在游戏本体内部的子目录（renpy 的 game/、
+  /// RPGMV 的 js/、补丁目录等）。总目录语义下这些目录即使被识别出
+  /// 游戏特征也不是独立游戏。
+  static const Set<String> _internalDirNames = {
+    'game', 'games', 'js', 'data', 'tyrano', 'www', 'resources', 'audio',
+    'movies', 'video', 'bgm', 'save', 'savedata', 'system', 'plugin',
+    'plugins', 'patch', 'patchs', 'update', 'updates', 'renpy', 'env',
+    'font', 'fonts', 'image', 'images', 'bgimage', 'cg', 'scenario',
+    'sound', 'voice', 'system40', 'others', 'savedata',
+  };
+
   /// SAF 选择文件夹（用户指令：读取该文件夹下的文件夹）：
-  /// - 选中即游戏文件夹（引擎可识别）→ 原地登记为单条引用（不复制）；
-  /// - 选中"游戏总目录"（自身不可识别）→ 扫描其一级子文件夹，把识别到
-  ///   游戏的子文件夹列出供勾选，批量登记为引用条目（同样不复制）。
+  /// - 根上有强特征文件（游戏本体）→ 单条收录；
+  /// - 否则视为"游戏总目录"：一级子文件夹逐个识别（未识别的非空子文件夹
+  ///   再探其一级子文件夹＝二级兜底），识别到游戏的进批量勾选清单，
+  ///   未识别的非空子文件夹也列出（勾选后逐个手动指定引擎）。
   Future<void> _pickFolder() async {
     final host = context.read<EngineHost>();
     final picked = await host.pickGameFolder();
@@ -192,42 +219,113 @@ class _ImportSheetState extends State<ImportSheet> {
     final root = Directory(picked.path!);
     final rootName = picked.name ?? p.basename(root.path);
 
-    // 先探自身：直接选了游戏文件夹 → 单条流程。
-    final rootDetect = await _import.previewDetect(root.path);
-    if (rootDetect.confident) {
+    // 1) 根级强特征 → 游戏本体语义（最常见：直接选了某个游戏的文件夹）。
+    var rootIsGame = false;
+    try {
+      for (final e in root.listSync(followLinks: false)) {
+        if (e is File && _strongRootFile.hasMatch(p.basename(e.path))) {
+          rootIsGame = true;
+          break;
+        }
+      }
+    } catch (_) {}
+    if (rootIsGame) {
       await _addReferenced(root, rootName, picked.uri);
       return;
     }
     if (!mounted) return;
 
-    // 游戏总目录语义：扫描一级子文件夹，收集识别到游戏的。
-    final subs = <Directory, DetectResult>{};
+    // 2) 总目录语义：扫一级（+二级兜底）子文件夹。
+    final confidentDirs = <Directory, DetectResult>{};
+    final manualDirs = <Directory>[];
     try {
       for (final entity in root.listSync(followLinks: false)) {
         if (entity is! Directory) continue;
-        if (p.basename(entity.path).startsWith('.')) continue;
+        final base = p.basename(entity.path);
+        if (base.startsWith('.')) continue;
+        if (_internalDirNames.contains(base.toLowerCase())) continue;
         final d = await _import.previewDetect(entity.path);
-        if (d.confident) subs[entity] = d;
+        if (d.confident) {
+          confidentDirs[entity] = d;
+        } else {
+          // 二级兜底："合集名/游戏名/游戏本体"结构。
+          var subHit = false;
+          try {
+            for (final e2 in entity.listSync(followLinks: false)) {
+              if (e2 is! Directory) continue;
+              final base2 = p.basename(e2.path);
+              if (base2.startsWith('.') ||
+                  _internalDirNames.contains(base2.toLowerCase())) {
+                continue;
+              }
+              final d2 = await _import.previewDetect(e2.path);
+              if (d2.confident) {
+                confidentDirs[e2] = d2;
+                subHit = true;
+              }
+            }
+          } catch (_) {}
+          if (!subHit && _dirNonEmpty(entity)) manualDirs.add(entity);
+        }
       }
-    } catch (_) {
-      // 个别子项不可读不影响整体。
-    }
+    } catch (_) {}
     if (!mounted) return;
 
-    if (subs.isEmpty) {
-      // 子文件夹也识别不出 → 保留单条流程（弹引擎确认兜底）。
-      await _addReferenced(root, rootName, picked.uri);
+    // 3) 特征在内部子目录的单游戏布局（renpy 的 game/、RPGMV 的 js/）：
+    // 没有任何"非内部目录名"的自信子文件夹，而根递归探测自信 → 单游戏。
+    if (confidentDirs.isEmpty && manualDirs.isEmpty) {
+      final rootDetect = await _import.previewDetect(root.path);
+      if (!mounted) return;
+      if (rootDetect.confident) {
+        await _addReferenced(root, rootName, picked.uri);
+        return;
+      }
+      // 什么都没有 → 询问是否整夹收录（手动指定引擎）。
+      final doAdd = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text('未在「$rootName」下发现游戏'),
+          content: const Text(
+            '没有识别到任何游戏特征。可将整个文件夹作为单一游戏收录，'
+            '稍后在详情面板手动指定引擎。',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('整个文件夹收录'),
+            ),
+          ],
+        ),
+      );
+      if (doAdd == true) await _addReferenced(root, rootName, picked.uri);
       return;
     }
-    final chosen = await _batchPickDialog(rootName, subs);
+
+    // 4) 批量勾选 → 收录。
+    final chosen = await _batchPickDialog(rootName, confidentDirs, manualDirs);
     if (chosen == null || chosen.isEmpty) return;
     setState(() => _busy = true);
     var ok = 0;
-    for (final dir in chosen) {
+    var skipped = 0;
+    for (final item in chosen) {
+      EngineId? force;
+      if (item.detect == null) {
+        if (!mounted) break;
+        force = await _pickEngineDialog();
+        if (force == null) {
+          skipped++;
+          continue;
+        }
+      }
       final s = await _import.addReferencedDirectory(
-        dir,
-        title: p.basename(dir.path),
+        item.dir,
+        title: p.basename(item.dir.path),
         folderUri: picked.uri,
+        forceEngine: force,
       );
       if (s.imported) ok++;
     }
@@ -235,8 +333,18 @@ class _ImportSheetState extends State<ImportSheet> {
     setState(() => _busy = false);
     _rescan();
     Navigator.of(context).pop();
-    _toast('已从「$rootName」收录 $ok / ${chosen.length} 个游戏'
-        '（${subs.length} 个识别到· 引用不复制）');
+    _toast(ok > 0
+        ? '已从「$rootName」收录 $ok 个游戏'
+        '${skipped > 0 ? '（跳过 $skipped 个）' : ''}· 引用不复制'
+        : '未收录任何游戏');
+  }
+
+  bool _dirNonEmpty(Directory d) {
+    try {
+      return d.listSync(followLinks: false).isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// 单目录收录（引用登记；不 confident 时弹引擎确认）。
@@ -275,34 +383,44 @@ class _ImportSheetState extends State<ImportSheet> {
     }
   }
 
-  /// 游戏总目录批量勾选：列出其下识别到游戏的子文件夹，默认全选。
-  Future<List<Directory>?> _batchPickDialog(
+  /// 游戏总目录批量勾选：识别到游戏的子文件夹（默认全选）＋
+  /// 未识别的非空子文件夹（默认不选，勾选后逐个手动指定引擎）。
+  Future<List<_PickedSub>?> _batchPickDialog(
     String rootName,
-    Map<Directory, DetectResult> subs,
+    Map<Directory, DetectResult> confidentDirs,
+    List<Directory> manualDirs,
   ) {
-    final checked = {for (final d in subs.keys) d: true};
-    return showDialog<List<Directory>>(
+    final checked = <_PickedSub, bool>{};
+    for (final e in confidentDirs.entries) {
+      checked[_PickedSub(e.key, e.value)] = true;
+    }
+    for (final d in manualDirs) {
+      checked[_PickedSub(d, null)] = false;
+    }
+    return showDialog<List<_PickedSub>>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (dialogContext, setDialog) => AlertDialog(
-          title: Text('「$rootName」下识别到 ${subs.length} 个游戏'),
+          title: Text('「$rootName」下发现 ${checked.length} 个文件夹'),
           content: SizedBox(
             width: 320,
             child: ListView(
               shrinkWrap: true,
               children: [
-                for (final entry in subs.entries)
+                for (final entry in checked.entries)
                   CheckboxListTile(
                     dense: true,
-                    value: checked[entry.key],
+                    value: entry.value,
                     title: Text(
-                      p.basename(entry.key.path),
+                      p.basename(entry.key.dir.path),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                     subtitle: Text(
-                      entry.value.engineDetail ??
-                          entry.value.engine.label,
+                      entry.key.detect == null
+                          ? '未识别 —— 勾选后手动指定引擎'
+                          : (entry.key.detect!.engineDetail ??
+                              entry.key.detect!.engine.label),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -319,7 +437,10 @@ class _ImportSheetState extends State<ImportSheet> {
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(
-                checked.entries.where((e) => e.value).map((e) => e.key).toList(),
+                checked.entries
+                    .where((e) => e.value)
+                    .map((e) => e.key)
+                    .toList(),
               ),
               child: Text(
                 '收录所选（${checked.values.where((v) => v).length}）',
@@ -332,8 +453,7 @@ class _ImportSheetState extends State<ImportSheet> {
   }
 
   Future<void> _importDirectory(ImportCandidate candidate) async {
-    setState(() => _busy = true);
-    var summary = await _import.importDirectory(candidate.dir);
+    setState(() => _busy = true);    var summary = await _import.importDirectory(candidate.dir);
     var engine = summary.engine;
     if (summary.needsConfirmation && mounted) {
       final picked = await _pickEngineDialog();
@@ -425,4 +545,11 @@ class _ImportSheetState extends State<ImportSheet> {
       SnackBar(content: Text(message)),
     );
   }
+}
+
+/// 总目录批量勾选的选中项：detect 为 null 表示未识别（收录时手动指定引擎）。
+class _PickedSub {
+  const _PickedSub(this.dir, this.detect);
+  final Directory dir;
+  final DetectResult? detect;
 }

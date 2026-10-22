@@ -250,6 +250,27 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
   把识别到游戏的子文件夹列为复选清单（默认全选）批量登记为引用条目
   （不复制）。全部识别不出时回退单条流程（引擎确认对话框兜底）。
 
+### v0.1.6 轮（v0.1.5 现机双反馈之二）
+
+- **启动游戏"链接失败/装载失败"（核心 shim 按名 dlopen 伴生库）**：
+  Flutter release 默认 `useLegacyPackaging=false` —— .so 留在 APK 内，
+  顶层 `System.loadLibrary` 可行，但核心 shim（liblusicgal_kirikiri.so 等）
+  运行时按名 dlopen 伴生库（kirikiri→libengine_api.so、
+  onscripter→libonsyuri.so、xsystem35→libxsystem35.so）时链接器只搜
+  nativeLibraryDir（空）→ CORE_NOT_BUNDLED"缺失或链接失败"。
+  `patch_use_legacy_packaging`：安装时提取全部 .so 落地成普通文件，
+  按名 dlopen 与 loadLibrary 全通（v0.1.4 起的双探针第一臂随之成为主路径）。
+- **总目录批量清单被单条分支吞掉（v0.1.5 病根）**：探测器对选中根目录
+  递归扫 4 层 —— 子文件夹里所有游戏的证据汇总到根目录自身
+  DetectResult → `rootDetect.confident==true` → 永远走单条收录，
+  批量清单不出现。修正判定序：**根级强特征文件**（游戏本体主封包必在
+  自家根上）优先判单游戏；否则总目录语义扫一级子文件夹（未识别的非空
+  子文件夹再探其一级子文件夹＝二级兜底），内部目录名（game/js/data/
+  tyrano/www/patch 等）排除；识别到游戏的进勾选清单（默认全选），
+  未识别非空的也列出（勾选后逐个手动指定引擎）。特征在内部子目录的
+  单游戏布局（renpy 的 game/、RPGMV 的 js/）由"无外部自信子文件夹 +
+  根递归自信 → 单游戏"兜住；全无特征时弹"整夹收录"询问。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

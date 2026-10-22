@@ -307,6 +307,64 @@ def patch_target_sdk_legacy(root: str) -> None:
         print('patch_platform: Gradle 未发现 flutter.targetSdkVersion（模板可能已变）')
 
 
+def patch_use_legacy_packaging(root: str) -> None:
+    """useLegacyPackaging=true（安装时把全部 .so 提取到 nativeLibraryDir）。
+
+    v0.1.5 现机实测病根：Flutter release 默认 useLegacyPackaging=false ——
+    .so 留在 APK 内由 dlopen 直读，顶层 System.loadLibrary 可行，但核心
+    shim 在运行时按名 dlopen 伴生库（kirikiri→libengine_api.so、
+    onscripter→libonsyuri.so、xsystem35→libxsystem35.so）时，链接器只在
+    nativeLibraryDir 系统路径里找名字 —— APK 内条目不在搜索范围 →
+    "链接失败/装载失败"（CORE_NOT_BUNDLED）。提取后所有 .so 落地成普通
+    文件，按名 dlopen 与 loadLibrary 全通。
+    """
+    app_dir = os.path.join(root, 'android', 'app')
+    done = False
+    for name in ('build.gradle.kts', 'build.gradle'):
+        p = os.path.join(app_dir, name)
+        if not os.path.exists(p):
+            continue
+        with open(p, encoding='utf-8') as f:
+            src = f.read()
+        if 'useLegacyPackaging' in src:
+            print(f'patch_platform: {name} 已含 useLegacyPackaging（跳过）')
+            done = True
+            break
+        if name.endswith('.kts'):
+            block = (
+                "\n// LusicGal: 提取全部原生库（patch_platform：核心 shim 按名\n"
+                "// dlopen 伴生库（libengine_api/libonsyuri/libxsystem35），\n"
+                "// APK 内直读形态下按名查找必失败 → 提取到 nativeLibraryDir）。\n"
+                "android {\n"
+                "    packaging {\n"
+                "        jniLibs {\n"
+                "            useLegacyPackaging = true\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        else:
+            block = (
+                "\n// LusicGal: 提取全部原生库（patch_platform：核心 shim 按名\n"
+                "// dlopen 伴生库（libengine_api/libonsyuri/libxsystem35），\n"
+                "// APK 内直读形态下按名查找必失败 → 提取到 nativeLibraryDir）。\n"
+                "android {\n"
+                "    packaging {\n"
+                "        jniLibs {\n"
+                "            useLegacyPackaging = true\n"
+                "        }\n"
+                "    }\n"
+                "}\n"
+            )
+        with open(p, 'a', encoding='utf-8') as f:
+            f.write(block)
+        print(f'patch_platform: {name} useLegacyPackaging=true（全 .so 提取）')
+        done = True
+        break
+    if not done:
+        print('patch_platform: 未找到 app gradle（跳过 legacy packaging 补丁）')
+
+
 def patch_lint_vital_off(root: str) -> None:
     """关 lintVitalRelease 关卡。
 
@@ -361,6 +419,7 @@ if __name__ == '__main__':
     patch_android(project_root)
     patch_android_gradle(project_root)
     patch_target_sdk_legacy(project_root)
+    patch_use_legacy_packaging(project_root)
     patch_release_minify(project_root)
     patch_lint_vital_off(project_root)
     patch_engine_cores(project_root)
