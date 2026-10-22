@@ -191,7 +191,7 @@ class _ImportSheetState extends State<ImportSheet> {
     'movies', 'video', 'bgm', 'save', 'savedata', 'system', 'plugin',
     'plugins', 'patch', 'patchs', 'update', 'updates', 'renpy', 'env',
     'font', 'fonts', 'image', 'images', 'bgimage', 'cg', 'scenario',
-    'sound', 'voice', 'system40', 'others', 'savedata',
+    'sound', 'voice', 'system40', 'others',
   };
 
   /// SAF 选择文件夹（用户指令：读取该文件夹下的文件夹）：
