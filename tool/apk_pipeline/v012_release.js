@@ -150,7 +150,10 @@ async function waitRuns(sha, deadlineMs, need = ['app', 'engines']) {
         });
         const size = fs.statSync(APK_OUT).size;
         log(`下载完成 ${size} bytes（期望 ${total}）`);
-        if (size > 100000000) ok = true;
+        // v0.1.6 起 useLegacyPackaging 压缩后 APK ~70-75MB：硬编码 100MB
+        // 旧闸会十连"完成"仍判败（v0.1.10 实证）。改为字节精确比对，
+        // 无 content-length 时退 50MB 保守下限。
+        if (total > 0 ? size === total : size > 50000000) ok = true;
       } else { log('dl http ' + res.status); await sleep(30000); }
     } catch (e) { log('dl err ' + e.message); await sleep(30000); }
   }
