@@ -93,27 +93,26 @@ open(f, "w", encoding="utf-8").write(src)
 PYEOF
 
 # ---- hunk 2：NDK r27 ALooper_pollAll → pollOnce ----------------------------
-# SDL 2.32+ 上游已自带 pollOnce（含空格风格变体）——已含即 OK。
+# 非致命 hunk：sensor 支持打不上不值得烧掉整个 onsyuri 构建（v0.1.2 起的
+# 现机断头闸实证 —— 硬锚 grep 未命中直接 exit 2，onscripter 从此一直走
+# v0.1.1 兜底，而兜底包里没有 libjpeg.so → onscripter 全线不可载）。
+# 改正则容错：函数名替换保参数原样；无 pollAll 用法或已 pollOnce 均 OK。
 S="$SDL_SRC/src/sensor/android/SDL_androidsensor.c"
 if [ -f "$S" ]; then
-  if grep -q 'ALooper_pollOnce' "$S"; then
-    echo "OK   SDL_androidsensor.c 已用 pollOnce（上游或补丁，跳过）"
-  elif grep -q 'ALooper_pollAll(0, NULL, &events, (void \*\*)&source)' "$S"; then
-    python3 - "$S" <<'PYEOF'
-import sys
+  python3 - "$S" <<'PYEOF'
+import re, sys
 f = sys.argv[1]
 src = open(f, encoding="utf-8").read()
-old = "ALooper_pollAll(0, NULL, &events, (void**)&source)"
-new = "ALooper_pollOnce(0, NULL, &events, (void**)&source) /* LusicGal: NDK r27 unavailable */"
-if src.count(old) != 1:
-    print("✗ ALooper_pollAll 命中非 1 次")
-    sys.exit(1)
-open(f, "w", encoding="utf-8").write(src.replace(old, new))
-print("OK   SDL_androidsensor.c pollOnce 补丁已应用")
+if re.search(r"\bALooper_pollOnce\s*\(", src):
+    print("OK   SDL_androidsensor.c 已用 pollOnce（上游或补丁，跳过）")
+    sys.exit(0)
+if re.search(r"\bALooper_pollAll\s*\(", src):
+    src2, n = re.subn(r"\bALooper_pollAll\s*\(", "ALooper_pollOnce(", src)
+    open(f, "w", encoding="utf-8").write(src2)
+    print(f"OK   SDL_androidsensor.c pollOnce 补丁已应用（{n} 处，参数原样保留）")
+else:
+    print("OK   SDL_androidsensor.c 无 pollAll 用法（无需补丁，跳过）")
 PYEOF
-  else
-    echo "✗ SDL_androidsensor.c 锚文本未命中（版本漂移？）"; exit 2
-  fi
 else
   echo "OK   无 SDL_androidsensor.c（该 SDL 版本无 sensor 目录，跳过）"
 fi
