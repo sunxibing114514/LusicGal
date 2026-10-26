@@ -47,6 +47,18 @@ for lib in liblusicgal_kirikiri.so libengine_api.so libc++_shared.so; do
   found="$(find "$BUILD" -name "$lib" -type f | head -1 || true)"
   [ -n "$found" ] && cp "$found" "$DEST/" || echo "⚠ 未找到 $lib"
 done
+# libomp.so：engine_api 的 OpenMP 运行时（DT_NEEDED 实证）。vcpkg/NDK
+# 工具链自带 aarch64 共享版，但此前从未打包 → 现机 dlopen
+# "library libomp.so not found"，kirikiri 全链断死。先查构建树
+# （vcpkg 装的），再兜底 NDK clang runtime。
+if [ ! -f "$DEST/libomp.so" ]; then
+  OMP="$(find "$BUILD" -name 'libomp.so' -type f | head -1 || true)"
+  if [ -z "$OMP" ]; then
+    OMP="$(find "$NDK/toolchains/llvm" -name 'libomp.so' \
+           -path '*aarch64*' 2>/dev/null | head -1 || true)"
+  fi
+  [ -n "$OMP" ] && cp "$OMP" "$DEST/" || echo "⚠ 未找到 aarch64 libomp.so"
+fi
 # Release+strip：静态 ANGLE/ffmpeg 全链接 .so 轻则上百分 MB——去调试段
 # 守 550MB APK 上限（llvm-strip 直接清 .so 的调试/符号表）。
 STRIP="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"

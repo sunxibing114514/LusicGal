@@ -118,6 +118,19 @@ jobs:
           for so in build/cores/*/arm64-v8a/*.so; do
             cp -n "$so" build/jniLibs/arm64-v8a/
           done
+          # 伴生依赖急救（DT_NEEDED 实证：engine_api→libomp、onsyuri→libjpeg；
+          # v0.1.1 兜底包里同样没有这两库，必须就地补）。
+          if [ ! -f build/jniLibs/arm64-v8a/libomp.so ]; then
+            NDK="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-}}"
+            OMP="$(find "$NDK/toolchains/llvm" -name 'libomp.so' -path '*aarch64*' 2>/dev/null | head -1 || true)"
+            [ -n "$OMP" ] && cp "$OMP" build/jniLibs/arm64-v8a/ \
+              || echo "WARN libomp.so rescue failed"
+          fi
+          if [ ! -f build/jniLibs/arm64-v8a/libjpeg.so ]; then
+            J="$(find build/cores -name 'libjpeg.so' -type f 2>/dev/null | head -1 || true)"
+            [ -n "$J" ] && cp "$J" build/jniLibs/arm64-v8a/ \
+              || echo "WARN libjpeg.so rescue failed"
+          fi
           echo "== 汇总核心 =="; ls -la build/jniLibs/arm64-v8a/
       - name: 核心清单校验（缺任一必绿核即败，防"哑巴降级"出包）
         run: |
@@ -126,7 +139,7 @@ jobs:
           for so in liblusicgal_sena.so liblusicgal_rfvp.so liblusicgal_siglus.so \
                      liblusicgal_artemis.so liblusicgal_onscripter.so \
                      liblusicgal_xsystem35.so liblusicgal_kirikiri.so \
-                     libengine_api.so; do
+                     libengine_api.so libomp.so libjpeg.so; do
             [ -f "$d/$so" ] || { echo "✗ 缺 $so"; miss=1; }
           done
           # librenpython.so 走 :module-renpy 自己的 jniLibs（build-out）。

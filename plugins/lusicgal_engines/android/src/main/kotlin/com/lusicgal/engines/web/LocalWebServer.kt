@@ -31,7 +31,27 @@ class LocalWebServer(
     private val hookJs: ByteArray,
 ) : Runnable {
     private val root: File = root.canonicalFile
-    private val serverSocket = ServerSocket(0, 50, InetAddress.getByName("127.0.0.1"))
+
+    /**
+     * 端口固定化（v0.1.8）：localStorage 按 origin 隔离 —— 随机端口 =
+     * 每次启动新 origin = 存档全丢（Tyrano v5 直用 localStorage、
+     * RPG MV/MZ 存档也全在 localStorage；tyrano 现机实测弹
+     * "この環境はセーブ機能を利用できません"）。固定候选序列优先，
+     * 全被占才降级随机（此时存档可能丢，属罕见退化）。
+     */
+    private val serverSocket: ServerSocket = bindStable()
+
+    private fun bindStable(): ServerSocket {
+        val loopback = InetAddress.getByName("127.0.0.1")
+        for (port in STABLE_PORTS) {
+            try {
+                return ServerSocket(port, 50, loopback)
+            } catch (_: Throwable) {
+            }
+        }
+        return ServerSocket(0, 50, loopback)
+    }
+
     @Volatile private var running = true
     private val thread = Thread(this, "LusicgalWebServer")
 
@@ -269,5 +289,8 @@ class LocalWebServer(
 
     companion object {
         private const val TAG = "LusicgalWebServer"
+
+        /** 固定端口候选（origin 稳定性 = localStorage 存档持续性）。 */
+        private val STABLE_PORTS = intArrayOf(38765, 38766, 38767, 38768, 38769)
     }
 }

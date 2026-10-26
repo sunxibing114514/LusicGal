@@ -46,10 +46,13 @@ cmake -G Ninja -S "$ROOT/native/engines/onscripter/adapter" -B "$BUILD" \
 cmake --build "$BUILD" --target lusicgal_onscripter
 
 # 4) 产物收集（含运行时依赖 libonsyuri.so / liblusicgal_onscripter.so）。
+#    libjpeg.so：libonsyuri 的 DT_NEEDED 实证依赖（fetch_jpeg 构建的共享
+#    版）—— 此前漏拷 → 现机 dlopen "library libjpeg.so not found"。
 DEST="$ROOT/build/cores/onscripter/arm64-v8a"
 mkdir -p "$DEST"
 for lib in liblusicgal_onscripter.so libonsyuri.so libSDL2.so libSDL2_image.so \
-           libSDL2_ttf.so libSDL2_mixer.so liblua.so libbz2.so libc++_shared.so; do
+           libSDL2_ttf.so libSDL2_mixer.so liblua.so libbz2.so libjpeg.so \
+           libc++_shared.so; do
   found="$(find "$BUILD" -name "$lib" -type f | head -1 || true)"
   [ -n "$found" ] && cp "$found" "$DEST/" || echo "⚠ 未找到 $lib"
 done

@@ -290,6 +290,23 @@ bash modules/renpy/build_android.sh   # staging：renpy-build 产物 + Java + �
   （-4=打开游戏文件失败 等）；装载结果落盘 `lg_preload_<id>.txt`，
   probe 读出 → 引擎页直接显示"已打包但装载失败：\<dlopen 错误原文\>"。
 
+### v0.1.8 轮（v0.1.7 现机三反馈：真因透传立功，三钉一次拔）
+
+v0.1.7 的错误透传直接给出真因，全包 24 库 ELF DT_NEEDED 审计
+（`tool/elf_needed_audit.py`，纯 Python 动态段解析）定位恰两颗缺失：
+
+- **kirikiri `dlopen: library "libomp.so" not found`**：libengine_api.so
+  的 OpenMP 运行时（DT_NEEDED）从未打包。build_android.sh 先查 vcpkg
+  构建树、再兜 NDK clang runtime 的 aarch64 libomp.so 拷入产物；
+  CI 汇总步骤加急救拷贝 + 必绿清单加 `libomp.so`。
+- **onscripter `dlopen: library "libjpeg.so" not found`**：libonsyuri
+  的 DT_NEEDED（fetch_jpeg 构建的共享版）漏拷。产物收集清单加
+  `libjpeg.so` + CI 急救 + 必绿清单。
+- **Tyrano 存档环境失败（日文弹窗二连）**：LocalWebServer 随机端口 →
+  每次启动新 origin → localStorage 隔离 → 存档全丢/自检失败
+  （Tyrano v5 直用 localStorage；RPG MV/MZ 存档也全在 localStorage）。
+  端口固定候选序列（38765-38769）优先绑定，全占才降级随机。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 
