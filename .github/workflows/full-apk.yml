@@ -86,23 +86,7 @@ jobs:
             || { echo "⚠ kirikiri 首试失败（gperf/vcpkg 网络风暴？）20s 后重试"; sleep 20; \
                  bash native/engines/kirikiri/build_android.sh; }
           bash native/engines/onscripter/build_android.sh \
-            || echo "⚠ onscripter 构建失败（走 release 兜底）"
-      - name: onscripter 兜底（上游 SDL 拉取真失败时，从最新 release APK 抽核心）
-        if: ${{ !cancelled() }}
-        run: |
-          d=build/cores/onscripter/arm64-v8a
-          if [ ! -f "$d/liblusicgal_onscripter.so" ]; then
-            echo "onscripter 核心缺失 → 从 release v0.1.1-full-core 抽取"
-            mkdir -p "$d" /tmp/ons_apk
-            curl -L --fail -o /tmp/ons.apk \
-              https://github.com/sunxibing114514/LusicGal/releases/download/v0.1.1-full-core/LusicGal-v0.1.1-full-core.apk
-            unzip -o -j /tmp/ons.apk 'lib/arm64-v8a/liblusicgal_onscripter*.so' \
-              'lib/arm64-v8a/libonsyuri.so' 'lib/arm64-v8a/libSDL2*.so' \
-              'lib/arm64-v8a/liblua.so' 'lib/arm64-v8a/libbz2.so' \
-              'lib/arm64-v8a/libc++_shared.so' -d "$d" || true
-            rm -f /tmp/ons.apk
-            ls -la "$d" || true
-          fi
+            || { echo "✗ onscripter 构建失败（无兜底：旧产物缺 libjpeg.so 必坏，红灯止步）"; exit 1; }
       - name: renpy 模块 staging（librenpython.so + Java + 运行时资产）
         if: ${{ !cancelled() }}
         run: bash modules/renpy/build_android.sh

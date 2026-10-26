@@ -35,6 +35,32 @@ fi
 # 2) SDL Android 取窗补丁（幂等）。
 bash "$ROOT/scripts/patch_sdl_android.sh" "$SRC/thirdparty/port/SDL2-2.26.3"
 
+# 2.5) external/jpeg 补齐：SDL_image 2.6.3 官方 release tarball 不含
+#      external/* 子模块（本地 tar 实证 432 成员全无 jpeg）—— 而上游
+#      onsyuri/本 adapter 的 JPEG_DIR 接法（add_subdirectory(external/jpeg)）
+#      依赖它。按 SDL_image release-2.6.3 官方钉的子模块版本拉齐：
+#      libsdl-org/jpeg @ bc27d050625f126dcba73ae5b731272de1a89dc1。
+#      （历史上唯一活过的 onsyuri = 本地 NDK 实构建产物，彼时树里恰有
+#      external/jpeg —— CI 的 tarball 路线从未成功过。）
+JPEGM="$SRC/thirdparty/port/SDL2_image-2.6.3/external/jpeg"
+if [ ! -f "$JPEGM/CMakeLists.txt" ]; then
+  echo "== 补齐 external/jpeg（SDL_image 子模块 libsdl-org/jpeg@bc27d05）=="
+  ok=""
+  for i in 1 2 3 4 5; do
+    rm -rf /tmp/lg-jpeg.tar.gz /tmp/jpeg-bc27d05*
+    if curl -fsSL -o /tmp/lg-jpeg.tar.gz \
+       https://github.com/libsdl-org/jpeg/archive/bc27d050625f126dcba73ae5b731272de1a89dc1.tar.gz \
+       && tar zxf /tmp/lg-jpeg.tar.gz -C /tmp \
+       && mkdir -p "$JPEGM" \
+       && cp -r /tmp/jpeg-bc27d05*/. "$JPEGM/"; then
+      ok=1; break
+    fi
+    echo "⚠ external/jpeg 拉取重试 $i/5"; sleep 10
+  done
+  rm -rf /tmp/lg-jpeg.tar.gz /tmp/jpeg-bc27d05*
+  [ -n "$ok" ] || { echo "✗ external/jpeg 补齐失败（onsyuri 构建必败，主动红灯）"; exit 2; }
+fi
+
 # 3) CMake（NDK 工具链）。
 BUILD="$ROOT/build/cores/onscripter/cmake"
 mkdir -p "$BUILD"

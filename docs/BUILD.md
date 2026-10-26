@@ -307,6 +307,27 @@ v0.1.7 的错误透传直接给出真因，全包 24 库 ELF DT_NEEDED 审计
   （Tyrano v5 直用 localStorage；RPG MV/MZ 存档也全在 localStorage）。
   端口固定候选序列（38765-38769）优先绑定，全占才降级随机。
 
+### v0.1.9/v0.1.10 轮（清单红线连环咬出 CI 断头闸，onsyuri 主构建复活）
+
+v0.1.8/v0.1.9 两轮 full-apk 被清单校验如实拦下，深挖出连环案：
+
+- **SDL sensor 补丁硬锚烧掉主构建（v0.1.2 起）**：`ALooper_pollAll`
+  字面 grep 未命中直接 exit 2 → onscripter 构建被 `|| echo` 静默吞掉，
+  全程走 v0.1.1 兜底。改正则替换（`\bALooper_pollAll\s*\(` → pollOnce，
+  参数原样）+ 非致命化（sensor 打不上不值得烧构建）。
+- **external/jpeg 子模块缺失（v0.1.1 起从未有过 CI 侧新 onsyuri）**：
+  SDL_image 2.6.3 官方 release tarball 432 成员实测不含 external/*
+  （子模块不进自动 tarball），而 adapter/上游 JPEG_DIR 接法依赖
+  `SDL2_image-2.6.3/external/jpeg`。历史上唯一活过的 onsyuri = 本地
+  NDK 实构建产物（当时树里恰有子模块）。修复：build_android.sh 按
+  SDL_image release-2.6.3 官方钉的子模块
+  （libsdl-org/jpeg@bc27d05）拉齐补缺（5 次重试，仍缺即主动红灯）；
+  adapter 强制 BUILD_SHARED_LIBS=ON（onsyuri 运行时按名依赖
+  libjpeg.so，产物收集打包）。
+- **v0.1.1 兜底永久移除**：兜底抽出的旧 onsyuri 带 libjpeg.so 依赖
+  而任何 release 里都没有这个库——兜底=必坏核静默出包，与清单闸
+  互斥。onscripter 构建失败现在直接红灯止步。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

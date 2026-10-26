@@ -52,7 +52,12 @@ set(SDL2MIXER_VENDORED on)
 add_subdirectory(${SDL2MIXER_DIR} ${CMAKE_BINARY_DIR}/thirdparty/sdl2mixer)
 target_link_options(SDL2_mixer PRIVATE "-Wl,-z,max-page-size=16384")
 
+# jpeg 强制共享版：libonsyuri 运行时按名依赖 libjpeg.so（DT_NEEDED
+# 实证），由 build_android.sh 收集打包。不写死 BUILD_SHARED_LIBS 的其余
+# 依赖行为保持原样（用后 unset 还原）。
+set(BUILD_SHARED_LIBS ON)
 add_subdirectory(${JPEG_DIR} ${CMAKE_BINARY_DIR}/thirdparty/jpeg)
+unset(BUILD_SHARED_LIBS)
 target_link_options(jpeg PRIVATE "-Wl,-z,max-page-size=16384")
 
 set(LUASRC_DIR ${LUA_DIR}/src)
