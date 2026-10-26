@@ -40,3 +40,5 @@ Cargo.lock
 # Rust 构建产物与 cargo 本地镜像缓存（.toolchain/cargo-home 之外的）
 target/
 /tool/apk_pipeline/cargo-mirror/
+
+elfaudit_*/
