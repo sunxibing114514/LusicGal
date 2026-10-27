@@ -217,7 +217,7 @@ class WebGameActivity : Activity() {
         super.onDestroy()
     }
 
-    /** JS 桥：Tyrano 存档落盘重定向 + 外部链接。 */
+    /** JS 桥：localStorage polyfill 后备存储 + 外部链接。 */
     private inner class WebBridge {
         @JavascriptInterface
         fun setStorage(key: String, value: String) {
@@ -237,6 +237,29 @@ class WebGameActivity : Activity() {
                 File(dir, "$key.sav").readText()
             } catch (t: Throwable) {
                 ""
+            }
+
+        @JavascriptInterface
+        fun removeStorage(key: String) {
+            try {
+                val dir = File(saveDir ?: File(filesDir, "web_saves/${kind}").path)
+                File(dir, "$key.sav").delete()
+            } catch (_: Throwable) {
+            }
+        }
+
+        /** 全部键名 JSON 数组（polyfill 冷启动水化用）。 */
+        @JavascriptInterface
+        fun listStorage(): String =
+            try {
+                val dir = File(saveDir ?: File(filesDir, "web_saves/${kind}").path)
+                val names = dir.listFiles()
+                    ?.filter { it.isFile && it.name.endsWith(".sav") }
+                    ?.map { it.name.removeSuffix(".sav") }
+                    ?: emptyList()
+                org.json.JSONArray(names).toString()
+            } catch (_: Throwable) {
+                "[]"
             }
 
         @JavascriptInterface

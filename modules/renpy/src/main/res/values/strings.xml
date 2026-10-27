@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- PythonSDLActivity.unpackData("private") 的版本比对源：
-         bump 此值触发 librenpython 运行时资产重新解包。 -->
-    <string name="private_version">lg-1</string>
+         bump 此值触发 librenpython 运行时资产重新解包。
+         lg-2：private.mp3 改 gzip 压缩（裸 tar 在 GZIPInputStream 上必炸，
+         且失败后 version 文件照写 —— 不 bump 则老安装永远跳过重解包）。 -->
+    <string name="private_version">lg-2</string>
 </resources>

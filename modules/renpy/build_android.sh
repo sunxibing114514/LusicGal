@@ -152,11 +152,14 @@ fi
 cp "$LIBREN" "$OUT/jniLibs/arm64-v8a/librenpython.so"
 
 # private.mp3 = tar{ main.py + renpy/ Python 树（无 common，无 pycache）}
+# 必须压缩：上游 AssetExtract.extractTar 用 GZIPInputStream 解包 —— 裸 tar
+# 的首字节非 gzip 魔数 → IOException → "Could not extract private data."
+# （v0.1.10 现机报障实证）。tar czf = gzip。
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 mkdir -p "$STAGE"
 cp "$ROOT/modules/renpy/src/main/python/main.py" "$STAGE/main.py"
-tar cf "$OUT/assets/private.mp3" \
+tar czf "$OUT/assets/private.mp3" \
     --exclude='common' --exclude='__pycache__' --exclude='*.pyc' \
     -C "$RENPY" renpy \
     -C "$STAGE" main.py

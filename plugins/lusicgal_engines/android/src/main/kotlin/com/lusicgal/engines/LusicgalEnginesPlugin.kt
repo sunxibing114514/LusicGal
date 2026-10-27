@@ -559,11 +559,35 @@ object EngineHost {
         }
     }
 
-    /** 装载核心库（存在与否都记结果；不存在则后续探测按 0 处理）。 */
+    /**
+     * 装载核心库（存在与否都记结果；不存在则后续探测按 0 处理）。
+     *
+     * v0.1.11 关键修正：System.loadLibrary 在 bionic 是 RTLD_LOCAL —— 符号
+     * 不进全局作用域，桥 C 的 dlsym(RTLD_DEFAULT, "lg_<id>_…") 永远解析
+     * 不到 → launch 一律 -3 NOT_SUPPORTED（v0.1.10 现机报障实证；kr/ons
+     * 同报，说明病灶在共性桥层而非引擎层）。改走桥的 loadCoreGlobal：
+     * dlopen(全路径, RTLD_NOW|RTLD_GLOBAL)，符号进全局作用域。
+     * 兜底：nativeLibraryDir 无文件时（未提取形态）退 System.loadLibrary。
+     */
     private fun ensureCore(engineId: String): Boolean {
         coreLoaded[engineId]?.let { return it }
         val ok = try {
-            System.loadLibrary("lusicgal_$engineId")
+            val ctx = appContext?.applicationContext
+                ?: throw UnsatisfiedLinkError("lusicgal_$engineId: 无 Context")
+            val dir = ctx.applicationInfo?.nativeLibraryDir
+            val so = if (dir != null) File(dir, "liblusicgal_$engineId.so") else null
+            if (so != null && so.isFile) {
+                val rc = CoreNative.loadCoreGlobal(so.absolutePath)
+                if (rc != 0) {
+                    val detail = CoreNative.coreLoadError()
+                    throw UnsatisfiedLinkError(
+                        "lusicgal_$engineId: " +
+                            (detail.ifBlank { "loadCoreGlobal rc=$rc" })
+                    )
+                }
+            } else {
+                System.loadLibrary("lusicgal_$engineId")
+            }
             true
         } catch (e: UnsatisfiedLinkError) {
             lastLoadError = "lusicgal_$engineId: $e"
@@ -780,6 +804,19 @@ internal object CoreNative {
     /** v2：探测核心是否链入 bridge（1=在）。 */
     @JvmStatic
     external fun probeCore(engineId: String): Int
+
+    /**
+     * v0.1.11：dlopen 核心到全局作用域（RTLD_NOW|RTLD_GLOBAL）。
+     * System.loadLibrary 是 RTLD_LOCAL，符号对桥的 dlsym(RTLD_DEFAULT)
+     * 不可见 → launch 必 -3。path = liblusicgal_<id>.so 绝对路径。
+     * 失败原文见 [coreLoadError]。
+     */
+    @JvmStatic
+    external fun loadCoreGlobal(path: String): Int
+
+    /** [loadCoreGlobal] 最近一次失败的原因（空串=无）。 */
+    @JvmStatic
+    external fun coreLoadError(): String
 
     /** v2：核心 ABI 版本（0=缺失）。 */
     @JvmStatic

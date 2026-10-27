@@ -6,7 +6,9 @@
  *  - 音频生命周期：Activity onPause/onResume 时全量暂停/恢复
  *    （WebAudio 上下文 + <audio>/<video> 元素；Tyrano 额外走 kag 内部表）；
  *  - 虚拟手柄按键合成（RPG MV/MZ 的键盘交互）→ KeyboardEvent；
- *  - Tyrano 存档桥接（$.setStorage/$.getStorage → lusicgalBridge 落盘）。
+ *  - localStorage 健康自检 + 坏则 lusicgalBridge 后备 polyfill
+ *    （v0.1.11 起：存档走引擎原生 localStorage —— 端口固定后按 origin
+ *    持久；不再改写引擎的存档函数，杜绝语义错配）。
  *
  * 参考 xm486/YukiHub（GPL-3.0）assets/__tyrano__.js 的音频表思路重写；
  * 署名见 docs/LICENSE_NOTES.md。
@@ -120,38 +122,98 @@
     } catch (e) { }
   };
 
-  // ---- Tyrano 存档桥接（jQuery $.setStorage 路径）----
-  function hasBridge() {
-    return typeof window.lusicgalBridge !== 'undefined' && window.lusicgalBridge;
-  }
-
-  var patchTyranoSave = function () {
-    if (kind !== 'tyrano' || !window.jQuery || !window.$ || !hasBridge()) return;
+  // ---- localStorage 健康自检 + 坏则 polyfill（document-start，先于所有引擎脚本）----
+  //
+  // v0.1.11 修正：此前这里是"$.setStorage/$.getStorage → lusicgalBridge
+  // 落盘"的桥接补丁 —— 与 tyrano libs.js 的原生语义（escape/unescape、
+  // "null" 字符串、LZString、boot 中途换实现）三重错配，触发 tyrano 自家
+  // $.getStorageWeb 的 catch → 现机实测弹
+  // "この環境はセーブ機能を利用できません" + "セーブデータが壊れている…"
+  // 双框。端口固定（v0.1.10）后原生 localStorage 即可持久，桥接彻底退役。
+  //
+  // 兜底保留：若设备 WebView 的原生 localStorage 真的抛异常（profile
+  // 损坏等），本 hook 在引擎脚本加载前用 lusicgalBridge 后备存储 polyfill
+  // 之 —— 引擎全程用自家原生语义读写，无双语义错配。
+  (function () {
+    var PREFIX = 'lgls::';
+    var nativeOk = false;
     try {
-      $.setStorage = function (key, val) {
-        try {
-          window.lusicgalBridge.setStorage(key, encodeURIComponent(JSON.stringify(val)));
-        } catch (e) { }
-      };
-      $.getStorage = function (key) {
-        try {
-          var s = window.lusicgalBridge.getStorage(key);
-          return s === '' || s == null ? null : decodeURIComponent(s);
-        } catch (e) { return null; }
-      };
-      $.openWebFromApp = function (url) {
-        try { window.lusicgalBridge.openUrl(url); } catch (e) { }
-      };
-    } catch (e) { }
-  };
+      var probe = '__lg_probe__';
+      window.localStorage.setItem(probe, '1');
+      var r = window.localStorage.getItem(probe);
+      window.localStorage.removeItem(probe);
+      nativeOk = (r === '1');
+    } catch (e) { nativeOk = false; }
+    if (nativeOk) return;
 
-  // 引擎脚本异步加载：轮询至识别成功后挂桥。
-  var tries = 0;
-  var timer = setInterval(function () {
-    kind = detect();
-    if (kind || ++tries > 120) {
-      clearInterval(timer);
-      if (kind) patchTyranoSave();
+    var mem = {};
+    function b() {
+      return typeof window.lusicgalBridge !== 'undefined' && window.lusicgalBridge;
     }
-  }, 500);
+    // 冷启动水化：后备盘已有键载入内存（bridge 调用同步返回）。
+    if (b()) {
+      try {
+        var raw = window.lusicgalBridge.listStorage();
+        var ks = JSON.parse(raw || '[]');
+        for (var i = 0; i < ks.length; i++) {
+          if (String(ks[i]).indexOf(PREFIX) !== 0) continue;
+          var k = String(ks[i]).substring(PREFIX.length);
+          var v = window.lusicgalBridge.getStorage(ks[i]);
+          if (v !== '' && v != null) mem[k] = v;
+        }
+      } catch (e) { }
+    }
+    var shim = {
+      get length() {
+        var n = 0;
+        for (var k in mem) { if (Object.prototype.hasOwnProperty.call(mem, k)) n++; }
+        return n;
+      },
+      key: function (i) {
+        var n = 0;
+        for (var k in mem) {
+          if (!Object.prototype.hasOwnProperty.call(mem, k)) continue;
+          if (n === i) return k;
+          n++;
+        }
+        return null;
+      },
+      getItem: function (k) {
+        k = String(k);
+        return Object.prototype.hasOwnProperty.call(mem, k) ? mem[k] : null;
+      },
+      setItem: function (k, v) {
+        k = String(k);
+        mem[k] = String(v);
+        if (b()) { try { window.lusicgalBridge.setStorage(PREFIX + k, String(v)); } catch (e) { } }
+      },
+      removeItem: function (k) {
+        k = String(k);
+        delete mem[k];
+        if (b()) { try { window.lusicgalBridge.removeStorage(PREFIX + k); } catch (e) { } }
+      },
+      clear: function () {
+        if (b()) {
+          try {
+            var ks = JSON.parse(window.lusicgalBridge.listStorage() || '[]');
+            for (var i = 0; i < ks.length; i++) {
+              if (String(ks[i]).indexOf(PREFIX) === 0) {
+                window.lusicgalBridge.removeStorage(String(ks[i]));
+              }
+            }
+          } catch (e) { }
+        }
+        mem = {};
+      }
+    };
+    try {
+      Object.defineProperty(window, 'localStorage', {
+        get: function () { return shim; },
+        configurable: true
+      });
+      window.sessionStorage = shim; // 会话存储同兜底（引擎有引用）。
+    } catch (e) {
+      // defineProperty 失败（极端）→ 原样保留，引擎可能仍报存档框。
+    }
+  })();
 })();

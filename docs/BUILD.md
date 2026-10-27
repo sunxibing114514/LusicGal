@@ -328,6 +328,32 @@ v0.1.8/v0.1.9 两轮 full-apk 被清单校验如实拦下，深挖出连环案�
   而任何 release 里都没有这个库——兜底=必坏核静默出包，与清单闸
   互斥。onscripter 构建失败现在直接红灯止步。
 
+### v0.1.11 轮（v0.1.10 现机四反馈：-3/-3/tyrano/renpy 连环保）
+
+- **kr/ons 启动 -3 NOT_SUPPORTED（RTLD_LOCAL 暗坑）**：Kotlin
+  `System.loadLibrary` 在 bionic 是 RTLD_LOCAL —— 符号不进全局
+  作用域，桥 C 的 `dlsym(RTLD_DEFAULT, "lg_<id>_…")` 永远解析不到
+  → launch 一律 -3。**原生 8 核从未真正启动过**（此前被更早的装载
+  失败掩盖；v0.1.10 修好装载后才暴露）。修复：桥新增
+  `loadCoreGlobal`（dlopen 全路径 + RTLD_NOW|RTLD_GLOBAL）+
+  `coreLoadError`；ensureCore 改走之（nativeLibraryDir 无文件时退
+  System.loadLibrary 兜底）。ELF dynsym 抽查确认 8 shim 全套导出
+  lg_<id>_engine_*、无 Java_org 重名碰撞。
+- **Tyrano 仍弹"存档不可用"双框**：双框正是 tyrano libs.js
+  `$.getStorageWeb` 的 catch —— 我们 boot hook 的存档桥接
+  （encodeURIComponent/null 语义、TYRANO.kag 检出后才补丁=boot
+  中途换实现）与 tyrano 原生语义（escape/unescape、"null" 字符串、
+  LZString）三重错配，必然触发其 catch。端口固定后原生 localStorage
+  本可持久 —— **桥接存档彻底退役**，引擎全程原生语义；另加
+  localStorage 健康自检（document-start 先于一切引擎脚本），原生真坏
+  才用 lusicgalBridge 后备 polyfill（WebBridge 补 removeStorage/
+  listStorage，键加 lgls:: 前缀防旧数据错配）。
+- **Ren'Py "Could not extract private data"**：build_android.sh 产
+  private.mp3 用裸 `tar cf`，而上游 AssetExtract.extractTar 用
+  GZIPInputStream 解包 —— 非 gzip 魔数必 IOException。改 `tar czf`。
+  另：上游 unpackData 失败后仍写 version 文件 → 下次启动版本相等
+  即跳过解包（脏残树永续）—— `private_version` bump lg-2 强制重解。
+
 本地复刻：同脚本序列手工跑即可（见 job 步定义）；Windows 盒 1.9GB RAM
 链接不动 krkr/renpy 重核 —— 重核一律走 CI（生产产线）。
 

@@ -26,6 +26,17 @@
 
 /* ---- 核心 API 运行期解析 -------------------------------------------------- */
 
+/*
+ * 核心装载方式（v0.1.11 修正）：
+ *  - Kotlin System.loadLibrary 在 bionic 是 RTLD_LOCAL —— 符号不进全局
+ *    作用域，桥的 dlsym(RTLD_DEFAULT, "lg_<id>_…") 永远解析不到 →
+ *    launch 一律 -3 NOT_SUPPORTED（v0.1.10 现机报障实证；此前被更早的
+ *    装载失败掩盖，原生核心从未真正启动过）。
+ *  - 修正：Kotlin 改调 loadCoreGlobal(全路径) —— 本桥 dlopen(path,
+ *    RTLD_NOW|RTLD_GLOBAL)，核心符号进全局作用域，dlsym(RTLD_DEFAULT)
+ *    生效。同库重复 dlopen 由 linker 按路径去重，只提升作用域。
+ */
+
 typedef struct lg_core_api {
   uint32_t (*abi_version)(void);
   lg_result_t (*create)(const lg_engine_desc_t *, lg_engine_t *);
@@ -47,6 +58,9 @@ static void lg_resolve_sym(void **slot, const char *engine_id,
   }
   *slot = dlsym(RTLD_DEFAULT, buf);
 }
+
+/* 最近一次 loadCoreGlobal 的 dlopen 错误原文（coreLoadError 读出）。 */
+static char g_last_core_dlerror[512] = {0};
 
 /* 解析核心符号集。返回 1 = abi_version 符号存在（核心已加载）。 */
 static int lg_resolve(const char *engine_id, lg_core_api_t *api) {
@@ -145,6 +159,41 @@ static char *jstr_dup(JNIEnv *env, jstring s) {
 }
 
 /* ---- JNI 入口 -------------------------------------------------------------- */
+
+/*
+ * dlopen 核心库到全局作用域（Kotlin 侧装载入口，替代 System.loadLibrary
+ * —— 后者 RTLD_LOCAL，符号对 dlsym(RTLD_DEFAULT) 不可见）。
+ * path = liblusicgal_<id>.so 的绝对路径（nativeLibraryDir 下）。
+ * 返回 0 成功；非 0 = 失败，原文见 coreLoadError()。
+ */
+JNIEXPORT jint JNICALL
+Java_com_lusicgal_engines_CoreNative_loadCoreGlobal(JNIEnv *env,
+                                                     jclass clazz,
+                                                     jstring path) {
+  (void)clazz;
+  const char *cpath = (*env)->GetStringUTFChars(env, path, NULL);
+  if (cpath == NULL) return -1;
+  dlerror();
+  void *h = dlopen(cpath, RTLD_NOW | RTLD_GLOBAL);
+  const char *err = dlerror();
+  if (h == NULL) {
+    snprintf(g_last_core_dlerror, sizeof(g_last_core_dlerror), "%s: %s",
+             cpath, (err && *err) ? err : "dlopen failed");
+    (*env)->ReleaseStringUTFChars(env, path, cpath);
+    return -1;
+  }
+  g_last_core_dlerror[0] = '\0';
+  (*env)->ReleaseStringUTFChars(env, path, cpath);
+  return 0;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_lusicgal_engines_CoreNative_coreLoadError(JNIEnv *env,
+                                                   jclass clazz) {
+  (void)clazz;
+  return (*env)->NewStringUTF(env, g_last_core_dlerror[0]
+                                        ? g_last_core_dlerror : "");
+}
 
 JNIEXPORT jint JNICALL
 Java_com_lusicgal_engines_CoreNative_probeCore(JNIEnv *env, jclass clazz,
